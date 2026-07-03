@@ -1,0 +1,17 @@
+[
+  {
+    "Author": "Anamnesis",
+    "Name": "Anamnesis Bridge",
+    "InternalName": "AnamnesisBridge",
+    "AssemblyVersion": "0.1.0.0",
+    "Description": "HTTP bridge for native Linux Anamnesis (GPose, territory, actors).",
+    "RepoUrl": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "anamnesis",
+      "gpose",
+      "linux",
+      "bridge"
+    ]
+  }
+]
