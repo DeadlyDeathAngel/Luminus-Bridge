@@ -1,5 +1,5 @@
 {
-  "Author": "Anamnesis",
+  "Author": "DeadlyDeathAngel",
   "Name": "Anamnesis Bridge",
   "Punchline": "HTTP status bridge for native Linux Anamnesis.",
   "Description": "Exposes GPose, territory, and nearby actors over localhost HTTP for the native Linux Anamnesis client. Default port 6679.",

@@ -1,16 +1,19 @@
-// © Anamnesis.
+// © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
 namespace AnamnesisBridge;
 
 using AnamnesisBridge.Services;
 using Dalamud.Game.Command;
+using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using System;
 
 /// <summary>
-/// Dalamud plugin entry: HTTP bridge for native Linux Anamnesis.
+/// HTTP IPC for native Linux Anamnesis.
+/// Idle on title screen; auto-starts when signed in (configurable). Blocking TCP accept uses no idle CPU.
 /// </summary>
 public sealed class Plugin : IDalamudPlugin
 {
@@ -30,53 +33,383 @@ public sealed class Plugin : IDalamudPlugin
 	internal static IObjectTable ObjectTable { get; private set; } = null!;
 
 	[PluginService]
+	internal static ITargetManager TargetManager { get; private set; } = null!;
+
+	[PluginService]
 	internal static IPluginLog Log { get; private set; } = null!;
 
+	[PluginService]
+	internal static IDataManager DataManager { get; private set; } = null!;
+
+	[PluginService]
+	internal static ISigScanner SigScanner { get; private set; } = null!;
+
+	[PluginService]
+	internal static IGameInteropProvider InteropProvider { get; private set; } = null!;
+
 	private const string CommandName = "/anamnesisbridge";
+	private const int ActorCacheIntervalTicks = 60;
+	private const int MaxConsecutiveFrameworkFailures = 3;
+	private const int FrameworkCooldownTicks = 600;
 
 	public Configuration Configuration { get; }
 
 	private readonly GameStateService gameState;
 	private readonly ActorEnumerationService actorEnumeration;
+	private readonly BridgeTargetService targetService;
+	private readonly AppearanceOverrideStore appearanceOverrides;
+	private readonly ActorAppearanceService appearanceService;
+	private readonly ActorRedrawService redrawService;
+	private readonly ActorSkeletonService skeletonService;
+	private readonly ActorEquipmentService equipmentService;
+	private readonly BridgeGameDataService gameDataService;
+	private readonly BridgeCustomizeOptionsService customizeOptionsService;
+	private readonly BridgePosingHooks posingHooks;
+	private readonly BridgeIpcService ipcService;
+	private readonly BridgeRuntimeCache runtimeCache;
+	private readonly FrameworkThreadDispatcher frameworkDispatcher;
 	private readonly BridgeHttpServer httpServer;
+	private readonly WindowSystem windowSystem = new("AnamnesisBridge");
+	private readonly BridgeStatusWindow statusWindow;
+
+	private bool frameworkHooked;
+	private bool frameworkHookLogged;
+	private bool drawHooked;
+	private int actorCacheTickCounter;
+	private int consecutiveFrameworkFailures;
+	private int frameworkCooldownRemaining;
 
 	public Plugin()
 	{
 		this.Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
 		this.gameState = new GameStateService(ClientState);
-		this.actorEnumeration = new ActorEnumerationService(ObjectTable);
-		this.httpServer = new BridgeHttpServer(Log, this.gameState, this.actorEnumeration, () => this.Configuration);
+		this.actorEnumeration = new ActorEnumerationService(ClientState, ObjectTable);
+		this.targetService = new BridgeTargetService(ClientState, ObjectTable, TargetManager);
+		this.appearanceOverrides = new AppearanceOverrideStore();
+		this.appearanceService = new ActorAppearanceService(ObjectTable, this.appearanceOverrides);
+		this.redrawService = new ActorRedrawService(this.appearanceService);
+		this.skeletonService = new ActorSkeletonService(ObjectTable);
+		this.gameDataService = new BridgeGameDataService(DataManager, Log);
+		this.customizeOptionsService = new BridgeCustomizeOptionsService(DataManager, Log);
+		this.equipmentService = new ActorEquipmentService(ObjectTable, this.gameDataService, Log);
+		this.posingHooks = new BridgePosingHooks(
+			SigScanner,
+			InteropProvider,
+			Log,
+			() => ClientState.IsGPosing);
+		this.ipcService = new BridgeIpcService(this.gameState, this.posingHooks);
+		this.runtimeCache = new BridgeRuntimeCache();
+		this.frameworkDispatcher = new FrameworkThreadDispatcher(Framework);
+		this.httpServer = new BridgeHttpServer(
+			Log,
+			this.gameState,
+			this.actorEnumeration,
+			this.targetService,
+			this.appearanceService,
+			this.redrawService,
+			this.skeletonService,
+			this.equipmentService,
+			this.gameDataService,
+			this.customizeOptionsService,
+			this.ipcService,
+			this.runtimeCache,
+			this.frameworkDispatcher,
+			() => this.Configuration);
+		this.httpServer.ClientActivity += this.OnClientActivity;
 
-		Framework.Update += this.OnFrameworkUpdate;
+		this.statusWindow = new BridgeStatusWindow(
+			() => this.Configuration,
+			() => this.gameState.Current,
+			() => this.httpServer.IsRunning,
+			this.SyncSessionFromConfiguration);
+		this.windowSystem.AddWindow(this.statusWindow);
+
+		ClientState.Login += this.OnLogin;
+		ClientState.Logout += this.OnLogout;
+
+		PluginInterface.UiBuilder.OpenMainUi += this.OnOpenMainUi;
+		PluginInterface.UiBuilder.OpenConfigUi += this.OnOpenConfigUi;
 		CommandManager.AddHandler(CommandName, new CommandInfo(this.OnCommand)
 		{
-			HelpMessage = "Show Anamnesis Bridge HTTP status.",
+			HelpMessage = "Open Anamnesis Bridge status (HTTP IPC auto-starts when signed in).",
 		});
 
-		this.httpServer.Restart();
 		this.gameState.Update();
-		Log.Information("AnamnesisBridge loaded.");
+		this.TryAutoStartSession();
+		Log.Information(
+			"AnamnesisBridge loaded. " +
+			(this.httpServer.IsRunning
+				? $"Listening on http://127.0.0.1:{this.Configuration.Port}/anamnesis/v1/"
+				: "Idle on title screen; auto-starts when signed in."));
 	}
 
 	public void Dispose()
 	{
-		Framework.Update -= this.OnFrameworkUpdate;
-		CommandManager.RemoveHandler(CommandName);
+		ClientState.Login -= this.OnLogin;
+		ClientState.Logout -= this.OnLogout;
+		this.httpServer.ClientActivity -= this.OnClientActivity;
+		this.StopSession();
+		this.StopDrawHook();
 		this.httpServer.Dispose();
+		this.posingHooks.Dispose();
+
+		PluginInterface.UiBuilder.OpenMainUi -= this.OnOpenMainUi;
+		PluginInterface.UiBuilder.OpenConfigUi -= this.OnOpenConfigUi;
+		CommandManager.RemoveHandler(CommandName);
+		this.windowSystem.RemoveAllWindows();
+		this.statusWindow.Dispose();
+	}
+
+	private void OnLogin()
+	{
+		// Territory may not be ready yet; framework hook polls until signed in.
+		if (!this.Configuration.Enabled || !this.Configuration.AutoStartOnLogin)
+		{
+			return;
+		}
+
+		this.StartFrameworkHook();
+		this.TryAutoStartSession();
+	}
+
+	private void OnLogout(int type, int code)
+	{
+		this.StopSession();
+	}
+
+	private void StartListener()
+	{
+		if (!this.httpServer.IsRunning)
+		{
+			this.httpServer.Restart();
+		}
+	}
+
+	private void StopListener()
+	{
+		if (this.httpServer.IsRunning)
+		{
+			this.httpServer.Stop();
+		}
+	}
+
+	private void SyncSessionFromConfiguration()
+	{
+		if (!this.Configuration.Enabled)
+		{
+			this.StopSession();
+			return;
+		}
+
+		if (this.httpServer.IsRunning)
+		{
+			this.httpServer.Restart();
+		}
+		else
+		{
+			this.TryAutoStartSession();
+		}
+	}
+
+	private void TryAutoStartSession()
+	{
+		if (!this.Configuration.Enabled || !this.Configuration.AutoStartOnLogin)
+		{
+			return;
+		}
+
+		this.gameState.Update();
+		if (!this.gameState.Current.SignedIn)
+		{
+			return;
+		}
+
+		this.StartListener();
+		this.StartFrameworkHook();
+	}
+
+	private void StopSession()
+	{
+		bool wasListening = this.httpServer.IsRunning;
+		this.StopFrameworkHook();
+		this.StopListener();
+		if (wasListening)
+		{
+			Log.Information("AnamnesisBridge idle (logged out).");
+		}
+	}
+
+	private void OnClientActivity()
+	{
+		this.StartFrameworkHook();
+	}
+
+	private void StartFrameworkHook()
+	{
+		if (this.frameworkHooked)
+		{
+			return;
+		}
+
+		this.frameworkHooked = true;
+		this.frameworkHookLogged = false;
+		this.gameState.Update();
+		Framework.Update += this.OnFrameworkUpdate;
+	}
+
+	private void StopFrameworkHook()
+	{
+		if (!this.frameworkHooked)
+		{
+			return;
+		}
+
+		this.frameworkHooked = false;
+		this.frameworkHookLogged = false;
+		Framework.Update -= this.OnFrameworkUpdate;
+		this.actorCacheTickCounter = 0;
+		this.consecutiveFrameworkFailures = 0;
+		this.frameworkCooldownRemaining = 0;
+	}
+
+	private void LogFrameworkHookEnabled()
+	{
+		if (this.frameworkHookLogged)
+		{
+			return;
+		}
+
+		this.frameworkHookLogged = true;
+		string reason = this.httpServer.HasRecentClientActivity
+			? "client connected"
+			: "signed in";
+		Log.Information($"AnamnesisBridge framework polling enabled ({reason}).");
+	}
+
+	private void StartDrawHook()
+	{
+		if (this.drawHooked)
+		{
+			return;
+		}
+
+		this.drawHooked = true;
+		PluginInterface.UiBuilder.Draw += this.OnDraw;
+	}
+
+	private void StopDrawHook()
+	{
+		if (!this.drawHooked)
+		{
+			return;
+		}
+
+		this.drawHooked = false;
+		PluginInterface.UiBuilder.Draw -= this.OnDraw;
+	}
+
+	private void OnDraw()
+	{
+		if (!this.statusWindow.IsOpen)
+		{
+			this.StopDrawHook();
+			return;
+		}
+
+		this.windowSystem.Draw();
+	}
+
+	private void OnOpenMainUi()
+	{
+		this.TryAutoStartSession();
+		if (!this.httpServer.IsRunning && this.Configuration.Enabled)
+		{
+			this.StartListener();
+			this.StartFrameworkHook();
+		}
+
+		this.statusWindow.IsOpen = true;
+		this.StartDrawHook();
+	}
+
+	private void OnOpenConfigUi()
+	{
+		this.OnOpenMainUi();
 	}
 
 	private void OnFrameworkUpdate(IFramework framework)
 	{
-		this.gameState.Update();
-		this.actorEnumeration.Update();
+		try
+		{
+			this.gameState.Update();
+			GameStateSnapshot state = this.gameState.Current;
+
+			if (this.Configuration.Enabled && this.Configuration.AutoStartOnLogin && state.SignedIn && !this.httpServer.IsRunning)
+			{
+				this.StartListener();
+			}
+
+			bool keepFrameworkWork = state.SignedIn || this.httpServer.HasRecentClientActivity;
+			if (!keepFrameworkWork)
+			{
+				this.StopFrameworkHook();
+				if (!state.SignedIn)
+				{
+					this.StopListener();
+				}
+
+				return;
+			}
+
+			this.LogFrameworkHookEnabled();
+
+			if (this.frameworkCooldownRemaining > 0)
+			{
+				this.frameworkCooldownRemaining--;
+				return;
+			}
+
+			// Height/skin are overwritten by the game every frame — re-apply continuously.
+			this.appearanceService.ReapplyOverrides();
+
+			this.actorCacheTickCounter++;
+			if (this.actorCacheTickCounter < ActorCacheIntervalTicks)
+			{
+				return;
+			}
+
+			this.actorCacheTickCounter = 0;
+			this.actorEnumeration.Update();
+			this.runtimeCache.Update(this.targetService, this.appearanceService, this.actorEnumeration.Current);
+			this.consecutiveFrameworkFailures = 0;
+		}
+		catch (Exception ex)
+		{
+			this.consecutiveFrameworkFailures++;
+			Log.Warning(ex, "AnamnesisBridge framework update failed.");
+			if (this.consecutiveFrameworkFailures >= MaxConsecutiveFrameworkFailures)
+			{
+				this.frameworkCooldownRemaining = FrameworkCooldownTicks;
+				this.consecutiveFrameworkFailures = 0;
+			}
+		}
 	}
 
 	private void OnCommand(string command, string args)
 	{
+		this.TryAutoStartSession();
+		if (!this.httpServer.IsRunning && this.Configuration.Enabled)
+		{
+			this.StartListener();
+			this.StartFrameworkHook();
+		}
+
+		this.statusWindow.IsOpen = true;
+		this.StartDrawHook();
 		GameStateSnapshot state = this.gameState.Current;
 		Log.Information(
-			$"AnamnesisBridge: http://{this.Configuration.BindAddress}:{this.Configuration.Port}/anamnesis/v1/ | " +
-			$"GPose={state.IsInGpose} territory={state.TerritoryId} signedIn={state.SignedIn} listening={this.httpServer.IsRunning}");
+			$"AnamnesisBridge: http://127.0.0.1:{this.Configuration.Port}/anamnesis/v1/ | " +
+			$"listening={this.httpServer.IsRunning} signedIn={state.SignedIn}");
 	}
 }

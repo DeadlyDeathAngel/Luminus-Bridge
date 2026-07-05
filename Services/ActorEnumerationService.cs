@@ -15,11 +15,13 @@ using System.Linq;
 /// </summary>
 public sealed class ActorEnumerationService
 {
+	private readonly IClientState clientState;
 	private readonly IObjectTable objectTable;
 	private IReadOnlyList<BridgeActorDto> actors = [];
 
-	public ActorEnumerationService(IObjectTable objectTable)
+	public ActorEnumerationService(IClientState clientState, IObjectTable objectTable)
 	{
+		this.clientState = clientState;
 		this.objectTable = objectTable;
 	}
 
@@ -46,6 +48,8 @@ public sealed class ActorEnumerationService
 				(obj.YalmDistanceX * obj.YalmDistanceX) +
 				(obj.YalmDistanceZ * obj.YalmDistanceZ));
 
+			ActorWorldInfo.TryGetHomeWorld(obj, out uint homeWorldId, out string homeWorld);
+
 			results.Add(new BridgeActorDto
 			{
 				ObjectIndex = obj.ObjectIndex,
@@ -54,6 +58,10 @@ public sealed class ActorEnumerationService
 				DataId = obj.BaseId,
 				ObjectKind = (byte)obj.ObjectKind,
 				Distance = distance,
+				IsLocalPlayer = this.objectTable.LocalPlayer?.ObjectIndex == obj.ObjectIndex,
+				IsGposeActor = obj.ObjectIndex is >= 200 and < 440,
+				HomeWorldId = homeWorldId,
+				HomeWorld = homeWorld,
 			});
 		}
 
