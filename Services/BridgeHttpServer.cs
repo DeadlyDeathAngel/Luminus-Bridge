@@ -36,6 +36,9 @@ public sealed class BridgeHttpServer : IDisposable
 	private readonly BridgeGameDataService gameDataService;
 	private readonly BridgeCustomizeOptionsService customizeOptionsService;
 	private readonly BridgeIpcService ipcService;
+	private readonly BridgeGposeControllerService gposeControllerService;
+	private readonly BridgeCameraService cameraService;
+	private readonly BridgeWorldService worldService;
 	private readonly BridgeRuntimeCache runtimeCache;
 	private readonly FrameworkThreadDispatcher frameworkDispatcher;
 	private readonly Func<Configuration> getConfiguration;
@@ -60,6 +63,9 @@ public sealed class BridgeHttpServer : IDisposable
 		BridgeGameDataService gameDataService,
 		BridgeCustomizeOptionsService customizeOptionsService,
 		BridgeIpcService ipcService,
+		BridgeGposeControllerService gposeControllerService,
+		BridgeCameraService cameraService,
+		BridgeWorldService worldService,
 		BridgeRuntimeCache runtimeCache,
 		FrameworkThreadDispatcher frameworkDispatcher,
 		Func<Configuration> getConfiguration)
@@ -75,6 +81,9 @@ public sealed class BridgeHttpServer : IDisposable
 		this.gameDataService = gameDataService;
 		this.customizeOptionsService = customizeOptionsService;
 		this.ipcService = ipcService;
+		this.gposeControllerService = gposeControllerService;
+		this.cameraService = cameraService;
+		this.worldService = worldService;
 		this.runtimeCache = runtimeCache;
 		this.frameworkDispatcher = frameworkDispatcher;
 		this.getConfiguration = getConfiguration;
@@ -263,10 +272,233 @@ public sealed class BridgeHttpServer : IDisposable
 			state = this.gameState.Current;
 		}
 
+		if (path.EndsWith("/gpose/prepare-posing", StringComparison.OrdinalIgnoreCase)
+			&& method == "POST")
+		{
+			PrepareForPosingResult? prepareResult = null;
+			this.frameworkDispatcher.TryRun(
+				() => prepareResult = this.gposeControllerService.PrepareForPosing(),
+				out string? prepareError);
+			if (prepareResult == null)
+			{
+				this.WriteJson(stream, 503, new GposePrepareResponse
+				{
+					Ok = false,
+					Error = prepareError ?? "Framework thread unavailable.",
+				});
+				return;
+			}
+
+			GposeCameraState cameras = this.gposeControllerService.Snapshot();
+			this.WriteJson(stream, 200, new GposePrepareResponse
+			{
+				Ok = prepareResult.Value.Ok,
+				DisabledFaceCamera = prepareResult.Value.DisabledFaceCamera,
+				DisabledGazeCamera = prepareResult.Value.DisabledGazeCamera,
+				FaceCameraEnabled = cameras.FaceCameraEnabled,
+				GazeCameraEnabled = cameras.GazeCameraEnabled,
+				Error = prepareResult.Value.Error,
+			});
+			return;
+		}
+
 		if (path.EndsWith("/gpose", StringComparison.OrdinalIgnoreCase))
 		{
-			this.WriteJson(stream, 200, new GposeResponse { IsInGpose = state.IsInGpose });
+			GposeCameraState cameraState = default;
+			this.frameworkDispatcher.TryRun(
+				() => cameraState = this.gposeControllerService.Snapshot(),
+				out _);
+			this.WriteJson(stream, 200, new GposeResponse
+			{
+				IsInGpose = state.IsInGpose,
+				FaceCameraEnabled = cameraState.FaceCameraEnabled,
+				GazeCameraEnabled = cameraState.GazeCameraEnabled,
+			});
 			return;
+		}
+
+		if (path.EndsWith("/camera", StringComparison.OrdinalIgnoreCase))
+		{
+			if (method == "GET")
+			{
+				CameraSnapshot snapshot = default;
+				this.frameworkDispatcher.TryRun(
+					() => snapshot = this.cameraService.Read(),
+					out string? readError);
+				if (readError != null && !snapshot.Available)
+				{
+					this.WriteJson(stream, 503, new CameraResponse
+					{
+						Ok = false,
+						Error = readError,
+					});
+					return;
+				}
+
+				this.WriteJson(stream, 200, ToCameraResponse(snapshot));
+				return;
+			}
+
+			if (method == "POST")
+			{
+				CameraUpdateRequest? request = DeserializeBody<CameraUpdateRequest>(body);
+				if (request == null)
+				{
+					this.WriteJson(stream, 400, new CameraResponse { Ok = false, Error = "Invalid JSON body." });
+					return;
+				}
+
+				(bool ok, string? error) applyResult = default;
+				CameraSnapshot after = default;
+				this.frameworkDispatcher.TryRun(
+					() =>
+					{
+						applyResult = this.cameraService.Apply(ToCameraUpdate(request));
+						after = this.cameraService.Read();
+					},
+					out string? applyThreadError);
+
+				if (applyThreadError != null)
+				{
+					this.WriteJson(stream, 503, new CameraResponse { Ok = false, Error = applyThreadError });
+					return;
+				}
+
+				if (!applyResult.ok)
+				{
+					this.WriteJson(stream, 400, new CameraResponse { Ok = false, Error = applyResult.error });
+					return;
+				}
+
+				this.WriteJson(stream, 200, ToCameraResponse(after, ok: true));
+				return;
+			}
+		}
+
+		if (path.EndsWith("/camera/shot", StringComparison.OrdinalIgnoreCase))
+		{
+			if (method == "GET")
+			{
+				string? indexText = GetQuery(queryString, "objectIndex");
+				if (!int.TryParse(indexText, out int objectIndex))
+				{
+					this.WriteJson(stream, 400, new CameraShotResponse { Ok = false, Error = "objectIndex query required." });
+					return;
+				}
+
+				(bool ok, CameraShotData? shot, string? error) exportResult = default;
+				this.frameworkDispatcher.TryRun(
+					() => exportResult = this.cameraService.ExportShot(objectIndex),
+					out string? exportThreadError);
+
+				if (exportThreadError != null)
+				{
+					this.WriteJson(stream, 503, new CameraShotResponse { Ok = false, Error = exportThreadError });
+					return;
+				}
+
+				if (!exportResult.ok || exportResult.shot == null)
+				{
+					this.WriteJson(stream, 400, new CameraShotResponse { Ok = false, Error = exportResult.error });
+					return;
+				}
+
+				this.WriteJson(stream, 200, new CameraShotResponse
+				{
+					Ok = true,
+					ObjectIndex = objectIndex,
+					Shot = ToCameraShotDto(exportResult.shot.Value),
+				});
+				return;
+			}
+
+			if (method == "POST")
+			{
+				CameraShotApplyRequest? request = DeserializeBody<CameraShotApplyRequest>(body);
+				if (request?.Shot == null)
+				{
+					this.WriteJson(stream, 400, new CameraShotResponse { Ok = false, Error = "Invalid JSON body." });
+					return;
+				}
+
+				(bool ok, string? error) applyResult = default;
+				this.frameworkDispatcher.TryRun(
+					() => applyResult = this.cameraService.ApplyShot(request.ObjectIndex, ToCameraShotData(request.Shot)),
+					out string? applyThreadError);
+
+				if (applyThreadError != null)
+				{
+					this.WriteJson(stream, 503, new CameraShotResponse { Ok = false, Error = applyThreadError });
+					return;
+				}
+
+				if (!applyResult.ok)
+				{
+					this.WriteJson(stream, 400, new CameraShotResponse { Ok = false, Error = applyResult.error });
+					return;
+				}
+
+				this.WriteJson(stream, 200, new CameraShotResponse { Ok = true, ObjectIndex = request.ObjectIndex });
+				return;
+			}
+		}
+
+		if (path.EndsWith("/world", StringComparison.OrdinalIgnoreCase))
+		{
+			if (method == "GET")
+			{
+				WorldSnapshot snapshot = default;
+				this.frameworkDispatcher.TryRun(
+					() => snapshot = this.worldService.Read(state.IsInGpose),
+					out string? readError);
+				if (readError != null && !snapshot.Available)
+				{
+					this.WriteJson(stream, 503, new WorldResponse
+					{
+						Ok = false,
+						Error = readError,
+					});
+					return;
+				}
+
+				this.WriteJson(stream, 200, ToWorldResponse(snapshot));
+				return;
+			}
+
+			if (method == "POST")
+			{
+				WorldUpdateRequest? request = DeserializeBody<WorldUpdateRequest>(body);
+				if (request == null)
+				{
+					this.WriteJson(stream, 400, new WorldResponse { Ok = false, Error = "Invalid JSON body." });
+					return;
+				}
+
+				(bool ok, string? error) applyResult = default;
+				WorldSnapshot after = default;
+				this.frameworkDispatcher.TryRun(
+					() =>
+					{
+						applyResult = this.worldService.Apply(state.IsInGpose, ToWorldUpdate(request));
+						after = this.worldService.Read(state.IsInGpose);
+					},
+					out string? applyThreadError);
+
+				if (applyThreadError != null)
+				{
+					this.WriteJson(stream, 503, new WorldResponse { Ok = false, Error = applyThreadError });
+					return;
+				}
+
+				if (!applyResult.ok)
+				{
+					this.WriteJson(stream, 400, new WorldResponse { Ok = false, Error = applyResult.error });
+					return;
+				}
+
+				this.WriteJson(stream, 200, ToWorldResponse(after, ok: true));
+				return;
+			}
 		}
 
 		if (path.EndsWith("/territory", StringComparison.OrdinalIgnoreCase))
@@ -285,12 +517,17 @@ public sealed class BridgeHttpServer : IDisposable
 			{
 				Ok = true,
 				Version = BridgeVersion.Current,
-				Step = "bone-posing",
-				Api = 5,
+				Step = "camera-animation-world",
+				Api = 6,
 				Capabilities =
 				[
 					"health",
 					"gpose",
+					"camera.read",
+					"camera.write",
+					"camera.shot",
+					"world.read",
+					"world.write",
 					"territory",
 					"actors",
 					"target",
@@ -301,6 +538,7 @@ public sealed class BridgeHttpServer : IDisposable
 					"equipment.write",
 					"gameData.items",
 					"gameData.dyes",
+					"gameData.weathers",
 					"gameData.colors",
 					"gameData.customizeOptions",
 					"skeleton.read",
@@ -316,6 +554,12 @@ public sealed class BridgeHttpServer : IDisposable
 		if (path.EndsWith("/game-data/dyes", StringComparison.OrdinalIgnoreCase) && method == "GET")
 		{
 			this.WriteJson(stream, 200, new DyesResponse { Dyes = this.gameDataService.GetDyes() });
+			return;
+		}
+
+		if (path.EndsWith("/game-data/weathers", StringComparison.OrdinalIgnoreCase) && method == "GET")
+		{
+			this.WriteJson(stream, 200, new WeathersResponse { Weathers = this.gameDataService.GetWeathers() });
 			return;
 		}
 
@@ -573,7 +817,11 @@ public sealed class BridgeHttpServer : IDisposable
 
 				ApplyPoseResponse? response = null;
 				if (!this.frameworkDispatcher.TryRun(
-					() => response = this.skeletonService.TryApplyPose(objectIndex, request),
+					() =>
+					{
+						this.ipcService.MarkPosingUsed();
+						response = this.skeletonService.TryApplyPose(objectIndex, request);
+					},
 					out string? dispatchError))
 				{
 					this.WriteJson(stream, 503, new ApplyPoseResponse
@@ -858,5 +1106,103 @@ public sealed class BridgeHttpServer : IDisposable
 		stream.Write(headerBytes, 0, headerBytes.Length);
 		stream.Write(payload, 0, payload.Length);
 		stream.Flush();
+	}
+
+	private static WorldResponse ToWorldResponse(WorldSnapshot snapshot, bool ok = false)
+	{
+		return new WorldResponse
+		{
+			Ok = ok || snapshot.Available,
+			Available = snapshot.Available,
+			IsInGpose = snapshot.IsInGpose,
+			TimeOfDayMinutes = snapshot.TimeOfDayMinutes,
+			TimeString = snapshot.TimeString,
+			DayOfMonth = snapshot.DayOfMonth,
+			WeatherId = snapshot.WeatherId,
+			WeatherName = snapshot.WeatherName,
+			WeatherIconId = snapshot.WeatherIconId,
+			FreezeTime = snapshot.FreezeTime,
+			HoldWeather = snapshot.HoldWeather,
+			Error = snapshot.Error,
+		};
+	}
+
+	private static WorldUpdate ToWorldUpdate(WorldUpdateRequest request)
+	{
+		return new WorldUpdate(
+			request.TimeOfDayMinutes,
+			request.DayOfMonth,
+			request.WeatherId,
+			request.FreezeTime,
+			request.HoldWeather);
+	}
+
+	private static CameraResponse ToCameraResponse(CameraSnapshot snapshot, bool ok = false)
+	{
+		return new CameraResponse
+		{
+			Ok = ok || snapshot.Available,
+			Available = snapshot.Available,
+			IsInGpose = snapshot.IsInGpose,
+			DelimitCamera = snapshot.DelimitCamera,
+			Zoom = snapshot.Zoom,
+			MinZoom = snapshot.MinZoom,
+			MaxZoom = snapshot.MaxZoom,
+			FieldOfView = snapshot.FieldOfView,
+			AngleXDeg = snapshot.AngleXDeg,
+			AngleYDeg = snapshot.AngleYDeg,
+			RotationDeg = snapshot.RotationDeg,
+			PanXDeg = snapshot.PanXDeg,
+			PanYDeg = snapshot.PanYDeg,
+			PositionX = snapshot.PositionX,
+			PositionY = snapshot.PositionY,
+			PositionZ = snapshot.PositionZ,
+			Error = snapshot.Error,
+		};
+	}
+
+	private static CameraUpdate ToCameraUpdate(CameraUpdateRequest request)
+	{
+		return new CameraUpdate(
+			request.DelimitCamera,
+			request.Zoom,
+			request.FieldOfView,
+			request.AngleXDeg,
+			request.AngleYDeg,
+			request.RotationDeg,
+			request.PanXDeg,
+			request.PanYDeg,
+			request.PositionX,
+			request.PositionY,
+			request.PositionZ);
+	}
+
+	private static CameraShotDto ToCameraShotDto(CameraShotData shot)
+	{
+		return new CameraShotDto
+		{
+			DelimitCamera = shot.DelimitCamera,
+			Zoom = shot.Zoom,
+			FieldOfView = shot.FieldOfView,
+			PanX = shot.Pan.X,
+			PanY = shot.Pan.Y,
+			PositionX = shot.Position.X,
+			PositionY = shot.Position.Y,
+			PositionZ = shot.Position.Z,
+			RotationX = shot.Rotation.X,
+			RotationY = shot.Rotation.Y,
+			RotationZ = shot.Rotation.Z,
+		};
+	}
+
+	private static CameraShotData ToCameraShotData(CameraShotDto shot)
+	{
+		return new CameraShotData(
+			shot.DelimitCamera,
+			shot.Zoom,
+			shot.FieldOfView,
+			new System.Numerics.Vector2(shot.PanX, shot.PanY),
+			new System.Numerics.Vector3(shot.PositionX, shot.PositionY, shot.PositionZ),
+			new System.Numerics.Vector3(shot.RotationX, shot.RotationY, shot.RotationZ));
 	}
 }

@@ -22,6 +22,10 @@ public sealed class BridgeGameDataService
 	private bool itemsBuilt;
 	private bool dyesBuilt;
 	private bool colorsBuilt;
+	private bool weathersBuilt;
+
+	private readonly List<WeatherDto> weathers = [];
+	private readonly Dictionary<ushort, WeatherDto> weathersById = [];
 
 	private readonly Dictionary<string, List<CatalogItemDto>> itemsBySlot = new(StringComparer.OrdinalIgnoreCase);
 	/// <summary>Model key → all items sharing that model (many items collide; resolve by slot).</summary>
@@ -108,6 +112,27 @@ public sealed class BridgeGameDataService
 		iconId = item?.IconId ?? 0;
 		(dyeName, dyeHex) = this.LookupDye(weapon.Dye);
 		(dye2Name, dye2Hex) = this.LookupDye(weapon.Dye2);
+	}
+
+	public IReadOnlyList<WeatherDto> GetWeathers()
+	{
+		this.EnsureWeathers();
+		return this.weathers;
+	}
+
+	public bool TryGetWeather(ushort weatherId, out string name, out uint iconId)
+	{
+		this.EnsureWeathers();
+		if (this.weathersById.TryGetValue(weatherId, out WeatherDto? weather))
+		{
+			name = weather.Name;
+			iconId = weather.IconId;
+			return true;
+		}
+
+		name = weatherId == 0 ? "(None)" : $"Weather {weatherId}";
+		iconId = 0;
+		return false;
 	}
 
 	public byte[]? TryGetIconBmp(uint iconId)
@@ -631,6 +656,52 @@ public sealed class BridgeGameDataService
 		if (cat.FingerL == 1)
 		{
 			yield return "ringLeft";
+		}
+	}
+
+	private void EnsureWeathers()
+	{
+		lock (this.gate)
+		{
+			if (this.weathersBuilt)
+			{
+				return;
+			}
+
+			try
+			{
+				var sheet = this.dataManager.GetExcelSheet<Weather>();
+				foreach (Weather row in sheet)
+				{
+					if (row.RowId == 0)
+					{
+						continue;
+					}
+
+					string name = row.Name.ToString();
+					if (string.IsNullOrWhiteSpace(name))
+					{
+						continue;
+					}
+
+					var dto = new WeatherDto
+					{
+						Id = (ushort)row.RowId,
+						Name = name,
+						IconId = (uint)row.Icon,
+					};
+					this.weathers.Add(dto);
+					this.weathersById[dto.Id] = dto;
+				}
+
+				this.weathers.Sort(static (a, b) => a.Id.CompareTo(b.Id));
+			}
+			catch (Exception ex)
+			{
+				this.log.Warning(ex, "Failed to build weather catalog.");
+			}
+
+			this.weathersBuilt = true;
 		}
 	}
 }

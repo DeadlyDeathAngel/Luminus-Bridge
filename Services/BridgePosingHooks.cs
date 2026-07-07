@@ -24,21 +24,32 @@ public sealed class BridgePosingHooks : IDisposable
 	private const string SigSyncModelSpace =
 		"48 83 EC 18 80 79 38 00";
 
+	private const string SigLookAtIkSolve =
+		"E8 ?? ?? ?? ?? 80 7C 24 ?? ?? 48 8D 4C 24 ??";
+
+	private const string SigApplyKineDriverTransforms =
+		"48 8B C4 55 57 48 83 EC 58";
+
 	private readonly ISigScanner sigScanner;
 	private readonly IGameInteropProvider interopProvider;
 	private readonly IPluginLog log;
 	private readonly Func<bool> getIsInGpose;
+	private readonly Func<bool> getGposeHooksAllowed;
 	private readonly object gate = new();
 
 	private Hook<SetBoneModelTransformDelegate>? hookPhysics;
 	private Hook<SyncModelSpaceDelegate>? hookSyncModel;
 	private Hook<CalculateBoneModelSpaceDelegate>? hookCalculateBone;
 	private Hook<SetPositionDelegate>? hookSetPosition;
+	private Hook<LookAtIkSolveDelegate>? hookLookAt;
+	private Hook<ApplyKineDriverTransformsDelegate>? hookKineDriver;
 
 	private bool physicsHookInitialized;
 	private bool syncHookInitialized;
 	private bool calculateHookInitialized;
 	private bool worldHookInitialized;
+	private bool lookAtHookInitialized;
+	private bool kineDriverHookInitialized;
 	private bool posingEnabled;
 	private bool freezePhysics;
 	private bool freezeWorldVisualState;
@@ -47,12 +58,14 @@ public sealed class BridgePosingHooks : IDisposable
 		ISigScanner sigScanner,
 		IGameInteropProvider interopProvider,
 		IPluginLog log,
-		Func<bool> getIsInGpose)
+		Func<bool> getIsInGpose,
+		Func<bool> getGposeHooksAllowed)
 	{
 		this.sigScanner = sigScanner;
 		this.interopProvider = interopProvider;
 		this.log = log;
 		this.getIsInGpose = getIsInGpose;
+		this.getGposeHooksAllowed = getGposeHooksAllowed;
 	}
 
 	public bool HooksActive
@@ -61,7 +74,7 @@ public sealed class BridgePosingHooks : IDisposable
 		{
 			lock (this.gate)
 			{
-				return this.physicsHookInitialized || this.syncHookInitialized || this.calculateHookInitialized || this.worldHookInitialized;
+				return this.physicsHookInitialized || this.syncHookInitialized || this.calculateHookInitialized || this.worldHookInitialized || this.lookAtHookInitialized || this.kineDriverHookInitialized;
 			}
 		}
 	}
@@ -84,6 +97,8 @@ public sealed class BridgePosingHooks : IDisposable
 			{
 				this.EnsureSyncModelHook();
 				this.EnsureCalculateBoneHook();
+				this.EnsureLookAtHook();
+				this.EnsureKineDriverHook();
 			}
 
 			if (freezeWorldVisualState)
@@ -109,6 +124,8 @@ public sealed class BridgePosingHooks : IDisposable
 		this.hookSyncModel?.Dispose();
 		this.hookCalculateBone?.Dispose();
 		this.hookSetPosition?.Dispose();
+		this.hookLookAt?.Dispose();
+		this.hookKineDriver?.Dispose();
 	}
 
 	private void EnsurePhysicsHook()
@@ -176,6 +193,44 @@ public sealed class BridgePosingHooks : IDisposable
 		{
 			this.log.Warning(ex, "Failed to create AnamnesisBridge calculate bone hook.");
 		}
+	}
+
+	private unsafe void EnsureLookAtHook()
+	{
+		if (this.lookAtHookInitialized)
+		{
+			return;
+		}
+
+		if (!this.TryHookFromSignature(
+			SigLookAtIkSolve,
+			this.DetourLookAtSolve,
+			out this.hookLookAt))
+		{
+			return;
+		}
+
+		this.lookAtHookInitialized = true;
+		this.log.Information("AnamnesisBridge look-at IK hook active.");
+	}
+
+	private void EnsureKineDriverHook()
+	{
+		if (this.kineDriverHookInitialized)
+		{
+			return;
+		}
+
+		if (!this.TryHookFromSignature(
+			SigApplyKineDriverTransforms,
+			this.DetourApplyKineDriverTransforms,
+			out this.hookKineDriver))
+		{
+			return;
+		}
+
+		this.kineDriverHookInitialized = true;
+		this.log.Information("AnamnesisBridge kine driver hook active.");
 	}
 
 	private void EnsureWorldHooks()
@@ -250,7 +305,7 @@ public sealed class BridgePosingHooks : IDisposable
 		byte bUpdateSecondaryPose,
 		byte bPropagate)
 	{
-		if (this.freezePhysics && partialPtr != nint.Zero)
+		if (this.freezePhysics && this.getGposeHooksAllowed() && partialPtr != nint.Zero)
 		{
 			return partialPtr;
 		}
@@ -260,7 +315,7 @@ public sealed class BridgePosingHooks : IDisposable
 
 	private void DetourSyncModelSpace(nint posePtr)
 	{
-		if (this.posingEnabled && posePtr != nint.Zero)
+		if (this.posingEnabled && this.getGposeHooksAllowed() && posePtr != nint.Zero)
 		{
 			return;
 		}
@@ -270,7 +325,7 @@ public sealed class BridgePosingHooks : IDisposable
 
 	private unsafe hkQsTransformf* DetourCalculateBoneModelSpace(hkaPose* pose, int boneIdx)
 	{
-		if (this.posingEnabled && pose != null)
+		if (this.posingEnabled && this.getGposeHooksAllowed() && pose != null)
 		{
 			if (boneIdx >= 0 && boneIdx < pose->ModelPose.Length && boneIdx < pose->BoneFlags.Length)
 			{
@@ -308,6 +363,35 @@ public sealed class BridgePosingHooks : IDisposable
 		}
 	}
 
+	private unsafe byte* DetourLookAtSolve(
+		byte* a1,
+		nint a2,
+		nint a3,
+		float a4,
+		nint a5,
+		nint a6)
+	{
+		// Block head/eye look-at IK while posing (Face Camera uses this path).
+		if (this.posingEnabled && this.getGposeHooksAllowed() && a1 != null)
+		{
+			*a1 = 0;
+			return a1;
+		}
+
+		return this.hookLookAt!.Original(a1, a2, a3, a4, a5, a6);
+	}
+
+	private void DetourApplyKineDriverTransforms(nint kineDriverPtr, nint hkaPosePtr)
+	{
+		// Hair/clothing physics — block while posing so manual bone writes are not overwritten.
+		if (this.posingEnabled && this.getGposeHooksAllowed() && kineDriverPtr != nint.Zero && hkaPosePtr != nint.Zero)
+		{
+			return;
+		}
+
+		this.hookKineDriver!.Original(kineDriverPtr, hkaPosePtr);
+	}
+
 	private nint DetourSetPosition(nint goPtr, float x, float y, float z)
 	{
 		// Only freeze world visuals in GPose — blocking SetPosition outside GPose glitches movement.
@@ -335,4 +419,16 @@ public sealed class BridgePosingHooks : IDisposable
 
 	[UnmanagedFunctionPointer(CallingConvention.ThisCall)]
 	private delegate nint SetPositionDelegate(nint goPtr, float x, float y, float z);
+
+	[UnmanagedFunctionPointer(CallingConvention.FastCall)]
+	private unsafe delegate byte* LookAtIkSolveDelegate(
+		byte* a1,
+		nint a2,
+		nint a3,
+		float a4,
+		nint a5,
+		nint a6);
+
+	[UnmanagedFunctionPointer(CallingConvention.StdCall)]
+	private delegate void ApplyKineDriverTransformsDelegate(nint kineDriverPtr, nint hkaPosePtr);
 }

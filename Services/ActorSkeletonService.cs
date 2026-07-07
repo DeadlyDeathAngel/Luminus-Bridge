@@ -4,6 +4,7 @@
 namespace AnamnesisBridge.Services;
 
 using AnamnesisBridge.Api;
+using AnamnesisBridge.Pose;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
@@ -13,7 +14,9 @@ using FFXIVClientStructs.Havok.Animation.Rig;
 using FFXIVClientStructs.Havok.Common.Base.Math.QsTransform;
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using CharacterBase = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase;
 
 /// <summary>
@@ -22,6 +25,7 @@ using CharacterBase = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBa
 public sealed unsafe class ActorSkeletonService
 {
 	private const int PoseApplyPasses = 3;
+	private const int ActorTransformOffset = 0x50;
 	private const uint ModelDirtyFlag = 1u << (int)hkaPose.BoneFlag.BoneModelDirty;
 	private const uint LocalDirtyFlag = 1u << (int)hkaPose.BoneFlag.BoneLocalDirty;
 
@@ -172,6 +176,146 @@ public sealed unsafe class ActorSkeletonService
 
 	public ApplyPoseResponse TryApplyPose(int objectIndex, ApplyPoseRequest request)
 	{
+		if (request.ApplyModelTransform)
+		{
+			if (!this.TryResolveCharacter(objectIndex, out _, out CharacterBase* charBase, out string? resolveError))
+			{
+				return ApplyFail(objectIndex, resolveError ?? "Actor not found.");
+			}
+
+			if (!this.TryApplyModelDifference(charBase, request, out string? transformError))
+			{
+				return ApplyFail(objectIndex, transformError ?? "Model transform failed.");
+			}
+		}
+
+		if (request.CharacterTwoPass)
+		{
+			return this.TryApplyCharacterPose(objectIndex, request);
+		}
+
+		return this.TryApplyPoseInternal(objectIndex, request);
+	}
+
+	public ApplyPoseResponse TryApplyCharacterPose(int objectIndex, ApplyPoseRequest request)
+	{
+		try
+		{
+			if (request.Bones.Count == 0)
+			{
+				return ApplyFail(objectIndex, "No bones in pose.");
+			}
+
+			var bodyBones = new Dictionary<string, ApplyPoseBoneDto>(StringComparer.Ordinal);
+			var expressionBones = new Dictionary<string, ApplyPoseBoneDto>(StringComparer.Ordinal);
+			foreach ((string name, ApplyPoseBoneDto bone) in request.Bones)
+			{
+				if (PoseBoneFilter.ShouldInclude(name, PoseImportScope.BodyOnly))
+				{
+					bodyBones[name] = bone;
+				}
+
+				if (PoseBoneFilter.ShouldInclude(name, PoseImportScope.ExpressionOnly))
+				{
+					expressionBones[name] = bone;
+				}
+			}
+
+			if (bodyBones.Count == 0)
+			{
+				return ApplyFail(objectIndex, "No body bones matched the character filter.");
+			}
+
+			ApplyPoseResponse bodyResponse = this.TryApplyPoseInternal(
+				objectIndex,
+				new ApplyPoseRequest
+				{
+					Bones = bodyBones,
+					ApplyPosition = request.ApplyPosition,
+					ApplyRotation = request.ApplyRotation,
+					ApplyScale = request.ApplyScale,
+					RestoreHeadAfterApply = false,
+				});
+
+			if (!bodyResponse.Ok)
+			{
+				return bodyResponse;
+			}
+
+			if (expressionBones.Count == 0)
+			{
+				return bodyResponse;
+			}
+
+			ApplyPoseResponse expressionResponse = this.TryApplyPoseInternal(
+				objectIndex,
+				new ApplyPoseRequest
+				{
+					Bones = expressionBones,
+					ApplyPosition = request.ApplyPosition,
+					ApplyRotation = request.ApplyRotation,
+					ApplyScale = request.ApplyScale,
+					RestoreHeadAfterApply = request.RestoreHeadAfterApply,
+				});
+
+			if (!expressionResponse.Ok)
+			{
+				return expressionResponse;
+			}
+
+			int totalApplied = bodyResponse.AppliedCount + expressionResponse.AppliedCount;
+			int totalSkipped = bodyResponse.SkippedCount + expressionResponse.SkippedCount;
+
+			if (request.ApplyPosition)
+			{
+				var hairBones = new Dictionary<string, ApplyPoseBoneDto>(StringComparer.Ordinal);
+				foreach ((string name, ApplyPoseBoneDto bone) in request.Bones)
+				{
+					if (PoseBoneFilter.IsHairRigBone(name))
+					{
+						hairBones[name] = bone;
+					}
+				}
+
+				if (hairBones.Count > 0)
+				{
+					ApplyPoseResponse hairResponse = this.TryApplyPoseInternal(
+						objectIndex,
+						new ApplyPoseRequest
+						{
+							Bones = hairBones,
+							ApplyPosition = request.ApplyPosition,
+							ApplyRotation = request.ApplyRotation,
+							ApplyScale = request.ApplyScale,
+							RestoreHeadAfterApply = false,
+						});
+
+					if (!hairResponse.Ok)
+					{
+						return hairResponse;
+					}
+
+					totalApplied += hairResponse.AppliedCount;
+					totalSkipped += hairResponse.SkippedCount;
+				}
+			}
+
+			return new ApplyPoseResponse
+			{
+				Ok = true,
+				ObjectIndex = objectIndex,
+				AppliedCount = totalApplied,
+				SkippedCount = totalSkipped,
+			};
+		}
+		catch (Exception ex)
+		{
+			return ApplyFail(objectIndex, ex.Message);
+		}
+	}
+
+	private ApplyPoseResponse TryApplyPoseInternal(int objectIndex, ApplyPoseRequest request)
+	{
 		try
 		{
 			if (request.Bones.Count == 0)
@@ -195,13 +339,16 @@ public sealed unsafe class ActorSkeletonService
 			int skipped = 0;
 			foreach ((string rawName, ApplyPoseBoneDto savedBone) in request.Bones)
 			{
-				if (string.Equals(rawName, "n_root", StringComparison.Ordinal))
+				string boneName = LegacyBoneNameConverter.GetModernName(rawName) ?? rawName;
+				if (string.Equals(boneName, "n_root", StringComparison.Ordinal)
+					|| string.Equals(boneName, "n_throw", StringComparison.Ordinal))
 				{
 					skipped++;
 					continue;
 				}
 
-				if (!boneIndex.TryGetValue(rawName, out BoneTransformDto? target))
+				if (!boneIndex.TryGetValue(boneName, out BoneTransformDto? target)
+					&& !boneIndex.TryGetValue(rawName, out target))
 				{
 					skipped++;
 					continue;
@@ -227,6 +374,20 @@ public sealed unsafe class ActorSkeletonService
 				return ApplyFail(objectIndex, "No skeleton (enter GPose for posing).");
 			}
 
+			hkQsTransformf? savedHeadTransform = null;
+			int savedHeadPartial = -1;
+			int savedHeadIndex = -1;
+			if (request.RestoreHeadAfterApply
+				&& boneIndex.TryGetValue("j_kao", out BoneTransformDto? headTarget))
+			{
+				if (this.TryReadModelTransform(skeleton, headTarget, out hkQsTransformf headTransform))
+				{
+					savedHeadTransform = headTransform;
+					savedHeadPartial = headTarget.Partial;
+					savedHeadIndex = headTarget.Index;
+				}
+			}
+
 			int applied = 0;
 			for (int pass = 0; pass < PoseApplyPasses; pass++)
 			{
@@ -245,26 +406,61 @@ public sealed unsafe class ActorSkeletonService
 					}
 
 					hkQsTransformf current = pose->ModelPose[target.Index];
+					Quaternion finalRotation = new(
+						current.Rotation.X,
+						current.Rotation.Y,
+						current.Rotation.Z,
+						current.Rotation.W);
+					if (request.ApplyRotation && savedBone.RotX.HasValue)
+					{
+						finalRotation = Quaternion.Normalize(new Quaternion(
+							savedBone.RotX.Value,
+							savedBone.RotY ?? 0f,
+							savedBone.RotZ ?? 0f,
+							savedBone.RotW ?? 1f));
+					}
+
+					Vector3 finalTranslation = new(
+						current.Translation.X,
+						current.Translation.Y,
+						current.Translation.Z);
+					if (request.ApplyPosition && savedBone.PosX.HasValue)
+					{
+						finalTranslation = new Vector3(
+							savedBone.PosX.Value,
+							savedBone.PosY ?? 0f,
+							savedBone.PosZ ?? 0f);
+					}
+
+					Vector3 finalScale = new(current.Scale.X, current.Scale.Y, current.Scale.Z);
+					if (request.ApplyScale && savedBone.ScaleX.HasValue)
+					{
+						finalScale = new Vector3(
+							savedBone.ScaleX.Value,
+							savedBone.ScaleY ?? 1f,
+							savedBone.ScaleZ ?? 1f);
+					}
+
 					hkQsTransformf transform = new()
 					{
 						Translation = new()
 						{
-							X = request.ApplyPosition && savedBone.PosX.HasValue ? savedBone.PosX.Value : current.Translation.X,
-							Y = request.ApplyPosition && savedBone.PosY.HasValue ? savedBone.PosY.Value : current.Translation.Y,
-							Z = request.ApplyPosition && savedBone.PosZ.HasValue ? savedBone.PosZ.Value : current.Translation.Z,
+							X = finalTranslation.X,
+							Y = finalTranslation.Y,
+							Z = finalTranslation.Z,
 						},
 						Rotation = new()
 						{
-							X = request.ApplyRotation && savedBone.RotX.HasValue ? savedBone.RotX.Value : current.Rotation.X,
-							Y = request.ApplyRotation && savedBone.RotY.HasValue ? savedBone.RotY.Value : current.Rotation.Y,
-							Z = request.ApplyRotation && savedBone.RotZ.HasValue ? savedBone.RotZ.Value : current.Rotation.Z,
-							W = request.ApplyRotation && savedBone.RotW.HasValue ? savedBone.RotW.Value : current.Rotation.W,
+							X = finalRotation.X,
+							Y = finalRotation.Y,
+							Z = finalRotation.Z,
+							W = finalRotation.W,
 						},
 						Scale = new()
 						{
-							X = request.ApplyScale && savedBone.ScaleX.HasValue ? savedBone.ScaleX.Value : current.Scale.X,
-							Y = request.ApplyScale && savedBone.ScaleY.HasValue ? savedBone.ScaleY.Value : current.Scale.Y,
-							Z = request.ApplyScale && savedBone.ScaleZ.HasValue ? savedBone.ScaleZ.Value : current.Scale.Z,
+							X = finalScale.X,
+							Y = finalScale.Y,
+							Z = finalScale.Z,
 						},
 					};
 
@@ -273,6 +469,21 @@ public sealed unsafe class ActorSkeletonService
 					{
 						applied++;
 					}
+				}
+			}
+
+			if (savedHeadTransform.HasValue
+				&& savedHeadPartial >= 0
+				&& savedHeadIndex >= 0
+				&& savedHeadPartial < skeleton->PartialSkeletonCount)
+			{
+				PartialSkeleton headPartialSkeleton = skeleton->PartialSkeletons[savedHeadPartial];
+				hkaPose* headPose = headPartialSkeleton.GetHavokPose(0);
+				if (headPose != null
+					&& savedHeadIndex >= 0
+					&& savedHeadIndex < headPose->ModelPose.Length)
+				{
+					this.WriteModelTransform(headPose, savedHeadIndex, savedHeadTransform.Value);
 				}
 			}
 
@@ -303,6 +514,25 @@ public sealed unsafe class ActorSkeletonService
 		}
 	}
 
+	private unsafe bool TryReadModelTransform(Skeleton* skeleton, BoneTransformDto bone, out hkQsTransformf transform)
+	{
+		transform = default;
+		if (bone.Partial < 0 || bone.Partial >= skeleton->PartialSkeletonCount)
+		{
+			return false;
+		}
+
+		PartialSkeleton partialSkeleton = skeleton->PartialSkeletons[bone.Partial];
+		hkaPose* pose = partialSkeleton.GetHavokPose(0);
+		if (pose == null || bone.Index < 0 || bone.Index >= pose->ModelPose.Length)
+		{
+			return false;
+		}
+
+		transform = pose->ModelPose[bone.Index];
+		return true;
+	}
+
 	private static int GetBoneDepth(hkaSkeleton* skeleton, int boneIndex)
 	{
 		int depth = 0;
@@ -319,6 +549,83 @@ public sealed unsafe class ActorSkeletonService
 		}
 
 		return depth;
+	}
+
+	/// <summary>Marks skeleton poses dirty so animation can take over after GPose posing ends.</summary>
+	public int TryReleaseAllCharacterSkeletons()
+	{
+		int released = 0;
+		int length = this.objectTable.Length;
+		for (int objectIndex = 0; objectIndex < length; objectIndex++)
+		{
+			if (this.TryReleaseSkeletonAnimation(objectIndex))
+			{
+				released++;
+			}
+		}
+
+		return released;
+	}
+
+	public bool TryGetModelTransform(
+		int objectIndex,
+		out ActorModelTransformSnapshot transform,
+		out string? error)
+	{
+		transform = default;
+		if (!this.TryResolveCharacter(objectIndex, out _, out CharacterBase* charBase, out error))
+		{
+			return false;
+		}
+
+		ActorSceneTransform* sceneTransform = (ActorSceneTransform*)((byte*)charBase + ActorTransformOffset);
+		transform = new ActorModelTransformSnapshot(sceneTransform->Position, sceneTransform->Rotation);
+		return true;
+	}
+
+	public bool TryReleaseSkeletonAnimation(int objectIndex)
+	{
+		try
+		{
+			if (!this.TryResolveCharacter(objectIndex, out _, out CharacterBase* charBase, out _))
+			{
+				return false;
+			}
+
+			Skeleton* skeleton = charBase->Skeleton;
+			if (skeleton == null)
+			{
+				return false;
+			}
+
+			bool released = false;
+			int partialCount = skeleton->PartialSkeletonCount;
+			for (int partial = 0; partial < partialCount; partial++)
+			{
+				PartialSkeleton partialSkeleton = skeleton->PartialSkeletons[partial];
+				hkaPose* pose = partialSkeleton.GetHavokPose(0);
+				if (pose == null || pose->BoneFlags.Length <= 0)
+				{
+					continue;
+				}
+
+				pose->ModelInSync = 0;
+				pose->LocalInSync = 0;
+				int boneCount = pose->BoneFlags.Length;
+				for (int boneIndex = 0; boneIndex < boneCount; boneIndex++)
+				{
+					pose->BoneFlags[boneIndex] |= ModelDirtyFlag | LocalDirtyFlag;
+				}
+
+				released = true;
+			}
+
+			return released;
+		}
+		catch
+		{
+			return false;
+		}
 	}
 
 	private bool TryResolveCharacter(
@@ -379,4 +686,56 @@ public sealed unsafe class ActorSkeletonService
 			ObjectIndex = objectIndex,
 			Error = error,
 		};
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct ActorSceneTransform
+	{
+		public Vector3 Position;
+
+		public Quaternion Rotation;
+
+		public Vector3 Scale;
+	}
+
+	private unsafe bool TryApplyModelDifference(
+		CharacterBase* charBase,
+		ApplyPoseRequest request,
+		out string? error)
+	{
+		error = null;
+		ActorSceneTransform* transform = (ActorSceneTransform*)((byte*)charBase + ActorTransformOffset);
+		ActorSceneTransform current = *transform;
+
+		if (request.ModelDiffPosX.HasValue || request.ModelDiffPosY.HasValue || request.ModelDiffPosZ.HasValue)
+		{
+			current.Position += new Vector3(
+				request.ModelDiffPosX ?? 0f,
+				request.ModelDiffPosY ?? 0f,
+				request.ModelDiffPosZ ?? 0f);
+		}
+
+		if (request.ModelDiffRotX.HasValue
+			|| request.ModelDiffRotY.HasValue
+			|| request.ModelDiffRotZ.HasValue
+			|| request.ModelDiffRotW.HasValue)
+		{
+			var delta = new Quaternion(
+				request.ModelDiffRotX ?? 0f,
+				request.ModelDiffRotY ?? 0f,
+				request.ModelDiffRotZ ?? 0f,
+				request.ModelDiffRotW ?? 1f);
+			current.Rotation = Quaternion.Normalize(current.Rotation * delta);
+		}
+
+		if (request.ModelDiffScaleX.HasValue || request.ModelDiffScaleY.HasValue || request.ModelDiffScaleZ.HasValue)
+		{
+			current.Scale += new Vector3(
+				request.ModelDiffScaleX ?? 0f,
+				request.ModelDiffScaleY ?? 0f,
+				request.ModelDiffScaleZ ?? 0f);
+		}
+
+		*transform = current;
+		return true;
+	}
 }

@@ -65,6 +65,9 @@ public sealed class Plugin : IDalamudPlugin
 	private readonly BridgeGameDataService gameDataService;
 	private readonly BridgeCustomizeOptionsService customizeOptionsService;
 	private readonly BridgePosingHooks posingHooks;
+	private readonly BridgeGposeControllerService gposeControllerService;
+	private readonly BridgeCameraService cameraService;
+	private readonly BridgeWorldService worldService;
 	private readonly BridgeIpcService ipcService;
 	private readonly BridgeRuntimeCache runtimeCache;
 	private readonly FrameworkThreadDispatcher frameworkDispatcher;
@@ -93,12 +96,17 @@ public sealed class Plugin : IDalamudPlugin
 		this.gameDataService = new BridgeGameDataService(DataManager, Log);
 		this.customizeOptionsService = new BridgeCustomizeOptionsService(DataManager, Log);
 		this.equipmentService = new ActorEquipmentService(ObjectTable, this.gameDataService, Log);
+		this.gposeControllerService = new BridgeGposeControllerService();
+		this.cameraService = new BridgeCameraService(SigScanner, InteropProvider, Log, ClientState, this.skeletonService);
+		this.worldService = new BridgeWorldService(SigScanner, Log, ClientState, this.gameDataService);
 		this.posingHooks = new BridgePosingHooks(
 			SigScanner,
 			InteropProvider,
 			Log,
-			() => ClientState.IsGPosing);
-		this.ipcService = new BridgeIpcService(this.gameState, this.posingHooks);
+			() => ClientState.IsGPosing,
+			this.AreGposePosingHooksAllowed);
+		this.ipcService = new BridgeIpcService(this.gameState, this.posingHooks, this.gposeControllerService);
+		this.ipcService.SetPosingHooksEngagedProvider(this.AreGposePosingHooksAllowed);
 		this.runtimeCache = new BridgeRuntimeCache();
 		this.frameworkDispatcher = new FrameworkThreadDispatcher(Framework);
 		this.httpServer = new BridgeHttpServer(
@@ -113,6 +121,9 @@ public sealed class Plugin : IDalamudPlugin
 			this.gameDataService,
 			this.customizeOptionsService,
 			this.ipcService,
+			this.gposeControllerService,
+			this.cameraService,
+			this.worldService,
 			this.runtimeCache,
 			this.frameworkDispatcher,
 			() => this.Configuration);
@@ -136,6 +147,7 @@ public sealed class Plugin : IDalamudPlugin
 		});
 
 		this.gameState.Update();
+		this.ipcService.InitializeGposeState(this.gameState.Current.IsInGpose);
 		this.TryAutoStartSession();
 		Log.Information(
 			"AnamnesisBridge loaded. " +
@@ -149,9 +161,12 @@ public sealed class Plugin : IDalamudPlugin
 		ClientState.Login -= this.OnLogin;
 		ClientState.Logout -= this.OnLogout;
 		this.httpServer.ClientActivity -= this.OnClientActivity;
+		this.ipcService.ResetSessionState();
 		this.StopSession();
 		this.StopDrawHook();
 		this.httpServer.Dispose();
+		this.worldService.Dispose();
+		this.cameraService.Dispose();
 		this.posingHooks.Dispose();
 
 		PluginInterface.UiBuilder.OpenMainUi -= this.OnOpenMainUi;
@@ -163,6 +178,8 @@ public sealed class Plugin : IDalamudPlugin
 
 	private void OnLogin()
 	{
+		this.ipcService.ResetSessionState();
+
 		// Territory may not be ready yet; framework hook polls until signed in.
 		if (!this.Configuration.Enabled || !this.Configuration.AutoStartOnLogin)
 		{
@@ -175,6 +192,7 @@ public sealed class Plugin : IDalamudPlugin
 
 	private void OnLogout(int type, int code)
 	{
+		this.ipcService.ResetSessionState();
 		this.StopSession();
 	}
 
@@ -338,12 +356,46 @@ public sealed class Plugin : IDalamudPlugin
 		this.OnOpenMainUi();
 	}
 
+	private int gposeSceneSettleTicksRemaining;
+
+	private const int GposeSceneSettleTicks = 120;
+
+	private bool AreGposePosingHooksAllowed()
+		=> ClientState.IsGPosing
+			&& this.gposeSceneSettleTicksRemaining <= 0
+			&& this.ipcService.ArePosingHooksAllowed();
+
 	private void OnFrameworkUpdate(IFramework framework)
 	{
 		try
 		{
 			this.gameState.Update();
 			GameStateSnapshot state = this.gameState.Current;
+			bool inGpose = state.IsInGpose;
+
+			this.ipcService.OnFrameworkTick(inGpose);
+			this.cameraService.OnFrameworkTick(inGpose);
+			this.worldService.OnFrameworkTick(inGpose);
+
+			if (this.ipcService.UpdateGposeState(inGpose, out bool enteredGpose))
+			{
+				Log.Information("Left GPose — posing state reset (no redraw).");
+			}
+			else if (enteredGpose)
+			{
+				this.gposeSceneSettleTicksRemaining = GposeSceneSettleTicks;
+				Log.Information(
+					$"Entered GPose — scene settle ({GposeSceneSettleTicks} ticks) before posing hooks.");
+			}
+
+			if (!inGpose)
+			{
+				this.gposeSceneSettleTicksRemaining = 0;
+			}
+			else if (this.gposeSceneSettleTicksRemaining > 0)
+			{
+				this.gposeSceneSettleTicksRemaining--;
+			}
 
 			if (this.Configuration.Enabled && this.Configuration.AutoStartOnLogin && state.SignedIn && !this.httpServer.IsRunning)
 			{

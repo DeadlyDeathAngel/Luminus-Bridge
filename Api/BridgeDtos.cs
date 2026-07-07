@@ -44,6 +44,240 @@ public sealed class GposeResponse
 
 	[JsonPropertyName("source")]
 	public string Source { get; init; } = "IClientState.IsGPosing";
+
+	[JsonPropertyName("faceCameraEnabled")]
+	public bool FaceCameraEnabled { get; init; }
+
+	[JsonPropertyName("gazeCameraEnabled")]
+	public bool GazeCameraEnabled { get; init; }
+}
+
+public sealed class GposePrepareResponse
+{
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; }
+
+	[JsonPropertyName("disabledFaceCamera")]
+	public bool DisabledFaceCamera { get; init; }
+
+	[JsonPropertyName("disabledGazeCamera")]
+	public bool DisabledGazeCamera { get; init; }
+
+	[JsonPropertyName("faceCameraEnabled")]
+	public bool FaceCameraEnabled { get; init; }
+
+	[JsonPropertyName("gazeCameraEnabled")]
+	public bool GazeCameraEnabled { get; init; }
+
+	[JsonPropertyName("error")]
+	public string? Error { get; init; }
+}
+
+public sealed class CameraResponse
+{
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; }
+
+	[JsonPropertyName("available")]
+	public bool Available { get; init; }
+
+	[JsonPropertyName("isInGpose")]
+	public bool IsInGpose { get; init; }
+
+	[JsonPropertyName("delimitCamera")]
+	public bool DelimitCamera { get; init; }
+
+	[JsonPropertyName("zoom")]
+	public float Zoom { get; init; }
+
+	[JsonPropertyName("minZoom")]
+	public float MinZoom { get; init; }
+
+	[JsonPropertyName("maxZoom")]
+	public float MaxZoom { get; init; }
+
+	[JsonPropertyName("fieldOfView")]
+	public float FieldOfView { get; init; }
+
+	[JsonPropertyName("angleXDeg")]
+	public float AngleXDeg { get; init; }
+
+	[JsonPropertyName("angleYDeg")]
+	public float AngleYDeg { get; init; }
+
+	[JsonPropertyName("rotationDeg")]
+	public float RotationDeg { get; init; }
+
+	[JsonPropertyName("panXDeg")]
+	public float PanXDeg { get; init; }
+
+	[JsonPropertyName("panYDeg")]
+	public float PanYDeg { get; init; }
+
+	[JsonPropertyName("positionX")]
+	public float PositionX { get; init; }
+
+	[JsonPropertyName("positionY")]
+	public float PositionY { get; init; }
+
+	[JsonPropertyName("positionZ")]
+	public float PositionZ { get; init; }
+
+	[JsonPropertyName("error")]
+	public string? Error { get; init; }
+}
+
+public sealed class CameraUpdateRequest
+{
+	[JsonPropertyName("delimitCamera")]
+	public bool? DelimitCamera { get; init; }
+
+	[JsonPropertyName("zoom")]
+	public float? Zoom { get; init; }
+
+	[JsonPropertyName("fieldOfView")]
+	public float? FieldOfView { get; init; }
+
+	[JsonPropertyName("angleXDeg")]
+	public float? AngleXDeg { get; init; }
+
+	[JsonPropertyName("angleYDeg")]
+	public float? AngleYDeg { get; init; }
+
+	[JsonPropertyName("rotationDeg")]
+	public float? RotationDeg { get; init; }
+
+	[JsonPropertyName("panXDeg")]
+	public float? PanXDeg { get; init; }
+
+	[JsonPropertyName("panYDeg")]
+	public float? PanYDeg { get; init; }
+
+	[JsonPropertyName("positionX")]
+	public float? PositionX { get; init; }
+
+	[JsonPropertyName("positionY")]
+	public float? PositionY { get; init; }
+
+	[JsonPropertyName("positionZ")]
+	public float? PositionZ { get; init; }
+}
+
+public sealed class CameraShotDto
+{
+	[JsonPropertyName("delimitCamera")]
+	public bool DelimitCamera { get; init; }
+
+	[JsonPropertyName("zoom")]
+	public float Zoom { get; init; }
+
+	[JsonPropertyName("fieldOfView")]
+	public float FieldOfView { get; init; }
+
+	[JsonPropertyName("panX")]
+	public float PanX { get; init; }
+
+	[JsonPropertyName("panY")]
+	public float PanY { get; init; }
+
+	[JsonPropertyName("positionX")]
+	public float PositionX { get; init; }
+
+	[JsonPropertyName("positionY")]
+	public float PositionY { get; init; }
+
+	[JsonPropertyName("positionZ")]
+	public float PositionZ { get; init; }
+
+	[JsonPropertyName("rotationX")]
+	public float RotationX { get; init; }
+
+	[JsonPropertyName("rotationY")]
+	public float RotationY { get; init; }
+
+	[JsonPropertyName("rotationZ")]
+	public float RotationZ { get; init; }
+}
+
+public sealed class CameraShotApplyRequest
+{
+	[JsonPropertyName("objectIndex")]
+	public int ObjectIndex { get; init; }
+
+	[JsonPropertyName("shot")]
+	public CameraShotDto Shot { get; init; } = new();
+}
+
+public sealed class CameraShotResponse
+{
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; }
+
+	[JsonPropertyName("objectIndex")]
+	public int ObjectIndex { get; init; }
+
+	[JsonPropertyName("shot")]
+	public CameraShotDto? Shot { get; init; }
+
+	[JsonPropertyName("error")]
+	public string? Error { get; init; }
+}
+
+public sealed class WorldResponse
+{
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; }
+
+	[JsonPropertyName("available")]
+	public bool Available { get; init; }
+
+	[JsonPropertyName("isInGpose")]
+	public bool IsInGpose { get; init; }
+
+	[JsonPropertyName("timeOfDayMinutes")]
+	public long TimeOfDayMinutes { get; init; }
+
+	[JsonPropertyName("timeString")]
+	public string TimeString { get; init; } = "00:00";
+
+	[JsonPropertyName("dayOfMonth")]
+	public byte DayOfMonth { get; init; }
+
+	[JsonPropertyName("weatherId")]
+	public ushort WeatherId { get; init; }
+
+	[JsonPropertyName("weatherName")]
+	public string WeatherName { get; init; } = string.Empty;
+
+	[JsonPropertyName("weatherIconId")]
+	public uint WeatherIconId { get; init; }
+
+	[JsonPropertyName("freezeTime")]
+	public bool FreezeTime { get; init; }
+
+	[JsonPropertyName("holdWeather")]
+	public bool HoldWeather { get; init; }
+
+	[JsonPropertyName("error")]
+	public string? Error { get; init; }
+}
+
+public sealed class WorldUpdateRequest
+{
+	[JsonPropertyName("timeOfDayMinutes")]
+	public long? TimeOfDayMinutes { get; init; }
+
+	[JsonPropertyName("dayOfMonth")]
+	public byte? DayOfMonth { get; init; }
+
+	[JsonPropertyName("weatherId")]
+	public ushort? WeatherId { get; init; }
+
+	[JsonPropertyName("freezeTime")]
+	public bool? FreezeTime { get; init; }
+
+	[JsonPropertyName("holdWeather")]
+	public bool? HoldWeather { get; init; }
 }
 
 public sealed class TerritoryResponse
@@ -416,13 +650,57 @@ public sealed class ApplyPoseRequest
 	public Dictionary<string, ApplyPoseBoneDto> Bones { get; init; } = new(StringComparer.Ordinal);
 
 	[JsonPropertyName("applyPosition")]
-	public bool ApplyPosition { get; init; } = true;
+	public bool ApplyPosition { get; init; }
 
 	[JsonPropertyName("applyRotation")]
 	public bool ApplyRotation { get; init; } = true;
 
 	[JsonPropertyName("applyScale")]
-	public bool ApplyScale { get; init; } = true;
+	public bool ApplyScale { get; init; }
+
+	/// <summary>After applying face bones, restore j_kao to its pre-apply transform (desktop expression hack).</summary>
+	[JsonPropertyName("restoreHeadAfterApply")]
+	public bool RestoreHeadAfterApply { get; init; }
+
+	/// <summary>Atomically apply body then expression passes on one framework tick (desktop parity).</summary>
+	[JsonPropertyName("characterTwoPass")]
+	public bool CharacterTwoPass { get; init; }
+
+	[JsonPropertyName("brioStyleBodyPass")]
+	public bool BrioStyleBodyPass { get; init; }
+
+	[JsonPropertyName("applyModelTransform")]
+	public bool ApplyModelTransform { get; init; }
+
+	[JsonPropertyName("modelDiffPosX")]
+	public float? ModelDiffPosX { get; init; }
+
+	[JsonPropertyName("modelDiffPosY")]
+	public float? ModelDiffPosY { get; init; }
+
+	[JsonPropertyName("modelDiffPosZ")]
+	public float? ModelDiffPosZ { get; init; }
+
+	[JsonPropertyName("modelDiffRotX")]
+	public float? ModelDiffRotX { get; init; }
+
+	[JsonPropertyName("modelDiffRotY")]
+	public float? ModelDiffRotY { get; init; }
+
+	[JsonPropertyName("modelDiffRotZ")]
+	public float? ModelDiffRotZ { get; init; }
+
+	[JsonPropertyName("modelDiffRotW")]
+	public float? ModelDiffRotW { get; init; }
+
+	[JsonPropertyName("modelDiffScaleX")]
+	public float? ModelDiffScaleX { get; init; }
+
+	[JsonPropertyName("modelDiffScaleY")]
+	public float? ModelDiffScaleY { get; init; }
+
+	[JsonPropertyName("modelDiffScaleZ")]
+	public float? ModelDiffScaleZ { get; init; }
 }
 
 public sealed class ApplyPoseResponse
@@ -597,6 +875,27 @@ public sealed class DyesResponse
 	public IReadOnlyList<DyeDto> Dyes { get; init; } = [];
 }
 
+public sealed class WeatherDto
+{
+	[JsonPropertyName("id")]
+	public ushort Id { get; init; }
+
+	[JsonPropertyName("name")]
+	public string Name { get; init; } = string.Empty;
+
+	[JsonPropertyName("iconId")]
+	public uint IconId { get; init; }
+}
+
+public sealed class WeathersResponse
+{
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; } = true;
+
+	[JsonPropertyName("weathers")]
+	public IReadOnlyList<WeatherDto> Weathers { get; init; } = [];
+}
+
 public sealed class ColorsResponse
 {
 	[JsonPropertyName("ok")]
@@ -714,6 +1013,10 @@ public sealed class BridgeIpcStatusDto
 
 	[JsonPropertyName("posingHooksActive")]
 	public bool PosingHooksActive { get; init; }
+
+	/// <summary>Posing enabled and hook detours are actively blocking Havok (past camera/GPose settle).</summary>
+	[JsonPropertyName("posingHooksEngaged")]
+	public bool PosingHooksEngaged { get; init; }
 }
 
 public sealed class BridgeIpcCommandRequest

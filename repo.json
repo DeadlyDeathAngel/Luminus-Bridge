@@ -3,9 +3,9 @@
     "Author": "DeadlyDeathAngel",
     "Name": "Anamnesis Bridge",
     "Punchline": "HTTP bridge for native Linux Anamnesis.",
-    "Description": "Exposes GPose, territory, actors, appearance, equipment, skeleton posing, and pose IPC over localhost HTTP. Auto-starts when signed in.",
+    "Description": "Exposes GPose, camera, world time/weather, territory, actors, appearance, equipment, skeleton posing, pose IPC, and game data over localhost HTTP. Auto-starts when signed in.",
     "InternalName": "AnamnesisBridge",
-    "AssemblyVersion": "0.2.7.6",
+    "AssemblyVersion": "0.2.8.10",
     "RepoUrl": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
@@ -15,9 +15,9 @@
       "linux",
       "bridge"
     ],
-    "DownloadLinkInstall": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge/releases/download/v0.2.7.6/AnamnesisBridge.zip",
-    "DownloadLinkUpdate": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge/releases/download/v0.2.7.6/AnamnesisBridge.zip",
-    "DownloadLinkTesting": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge/releases/download/v0.2.7.6/AnamnesisBridge.zip",
-    "LastUpdate": "1783223419"
+    "DownloadLinkInstall": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge/releases/download/v0.2.8.10/AnamnesisBridge.zip",
+    "DownloadLinkUpdate": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge/releases/download/v0.2.8.10/AnamnesisBridge.zip",
+    "DownloadLinkTesting": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge/releases/download/v0.2.8.10/AnamnesisBridge.zip",
+    "LastUpdate": "1783402067"
   }
 ]

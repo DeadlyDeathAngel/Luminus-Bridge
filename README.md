@@ -4,7 +4,7 @@
 
 Companion Dalamud plugin for the [native Linux Anamnesis](https://github.com/imchillin/Anamnesis) port. Exposes game state and actor editing over localhost HTTP so the Linux client can drive the game in-process (reliable on Wine/XLCore).
 
-**v0.2.7.6** — auto-starts when you sign in, appearance/equipment editing, skeleton posing, `.pose` import, and GPose actor targeting.
+**v0.2.8.10** — camera control, `.shot` import/export, world time freeze + weather hold (GPose), legacy bone names for `.pose`, and everything from v0.2.7.6 (appearance, equipment, skeleton posing, auto-start).
 
 Not an official Anamnesis Team plugin — designed and maintained for the Linux bridge workflow.
 
@@ -17,6 +17,10 @@ Not an official Anamnesis Team plugin — designed and maintained for the Linux 
 | `GET /health` | Plugin liveness + version |
 | `GET /capabilities` | Supported API features |
 | `GET /gpose` | `{ "isInGpose": bool }` |
+| `POST /gpose/prepare-posing` | Enter GPose and pin target for posing |
+| `GET/POST /camera` | Read or write GPose camera |
+| `GET/POST /camera/shot` | Export or import `.shot` camera files |
+| `GET/POST /world` | Read or write Eorzea time, freeze time, weather |
 | `GET /territory` | Territory id + signed-in |
 | `GET /status` | All fields |
 | `GET /actors` | Nearby actors (names, indices, addresses) |
@@ -27,7 +31,7 @@ Not an official Anamnesis Team plugin — designed and maintained for the Linux 
 | `GET/POST /actors/{id}/skeleton` | Read or write bone transforms |
 | `POST /actors/{id}/skeleton/apply-pose` | Apply Brio/Anamnesis pose JSON |
 | `GET/POST /ipc` | Posing flags and physics hooks |
-| `GET /game-data/*` | Items, dyes, colors, customize options, icons |
+| `GET /game-data/*` | Items, dyes, weathers, colors, customize options, icons |
 
 ## Build (dev)
 
@@ -62,7 +66,7 @@ Add to `/xlsettings` → Experimental → Custom Plugin Repositories:
 https://raw.githubusercontent.com/DeadlyDeathAngel/Anamnesis-Bridge/refs/heads/main/repo.json
 ```
 
-Install or update from **Releases** (`v0.2.7.6` and later) for one-click install via the custom repo.
+Install or update from **Releases** (`v0.2.8.10` and later) for one-click install via the custom repo.
 
 ## Flatpak XIVLauncher
 

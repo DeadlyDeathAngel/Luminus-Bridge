@@ -4,6 +4,7 @@
 namespace AnamnesisBridge.Services;
 
 using AnamnesisBridge.Api;
+using System;
 
 /// <summary>
 /// In-process command IPC for the Linux host (replaces injected RemoteController shared-memory IPC).
@@ -13,16 +14,79 @@ public sealed class BridgeIpcService
 {
 	private readonly GameStateService gameState;
 	private readonly BridgePosingHooks posingHooks;
+	private readonly BridgeGposeControllerService gposeController;
 	private readonly object gate = new();
 
 	private bool posingEnabled;
 	private bool freezePhysics;
 	private bool freezeWorldVisualState;
+	private bool lastKnownGpose;
+	private bool posingUsedThisGposeSession;
+	private int cameraSettleTicksRemaining;
+	private Func<bool>? getPosingHooksEngaged;
 
-	public BridgeIpcService(GameStateService gameState, BridgePosingHooks posingHooks)
+	private const int CameraSettleTicks = 18;
+
+	public void SetPosingHooksEngagedProvider(Func<bool> provider)
+		=> this.getPosingHooksEngaged = provider;
+
+	public BridgeIpcService(
+		GameStateService gameState,
+		BridgePosingHooks posingHooks,
+		BridgeGposeControllerService gposeController)
 	{
 		this.gameState = gameState;
 		this.posingHooks = posingHooks;
+		this.gposeController = gposeController;
+	}
+
+	public void InitializeGposeState(bool isInGpose)
+	{
+		lock (this.gate)
+		{
+			this.lastKnownGpose = isInGpose;
+		}
+	}
+
+	public bool ArePosingHooksAllowed()
+	{
+		lock (this.gate)
+		{
+			return this.cameraSettleTicksRemaining <= 0;
+		}
+	}
+
+	/// <summary>Framework tick — camera settle countdown and Face/Gaze guard while posing.</summary>
+	public void OnFrameworkTick(bool isInGpose)
+	{
+		lock (this.gate)
+		{
+			if (!isInGpose)
+			{
+				this.cameraSettleTicksRemaining = 0;
+				return;
+			}
+
+			if (this.cameraSettleTicksRemaining > 0)
+			{
+				this.cameraSettleTicksRemaining--;
+			}
+
+			if (!this.posingEnabled)
+			{
+				return;
+			}
+
+			GposeCameraState cameras = this.gposeController.Snapshot();
+			if (cameras.FaceCameraEnabled || cameras.GazeCameraEnabled)
+			{
+				PrepareForPosingResult result = this.gposeController.PrepareForPosing();
+				if (result.DisabledFaceCamera || result.DisabledGazeCamera)
+				{
+					this.cameraSettleTicksRemaining = CameraSettleTicks;
+				}
+			}
+		}
 	}
 
 	public BridgeIpcStatusDto Snapshot()
@@ -33,10 +97,7 @@ public sealed class BridgeIpcService
 			// Auto-disable posing and world freeze when leaving GPose.
 			if (!state.IsInGpose && (this.posingEnabled || this.freezeWorldVisualState))
 			{
-				this.posingEnabled = false;
-				this.freezePhysics = false;
-				this.freezeWorldVisualState = false;
-				this.posingHooks.DisableAll();
+				this.ResetSessionStateLocked();
 			}
 
 			return new BridgeIpcStatusDto
@@ -59,7 +120,62 @@ public sealed class BridgeIpcService
 					"GetIsInGpose",
 				],
 				PosingHooksActive = this.posingHooks.HooksActive,
+				PosingHooksEngaged = this.posingEnabled
+					&& state.IsInGpose
+					&& (this.getPosingHooksEngaged?.Invoke() ?? false),
 			};
+		}
+	}
+
+	/// <summary>Clears posing/freeze flags and hook state (logout, login, relog).</summary>
+	public void ResetSessionState()
+	{
+		lock (this.gate)
+		{
+			this.ResetSessionStateLocked();
+		}
+	}
+
+	/// <summary>Framework-thread GPose transition (independent of HTTP client polling).</summary>
+	public bool UpdateGposeState(bool isInGpose, out bool enteredGpose)
+	{
+		enteredGpose = false;
+		lock (this.gate)
+		{
+			bool wasInGpose = this.lastKnownGpose;
+			this.lastKnownGpose = isInGpose;
+
+			if (!wasInGpose && isInGpose)
+			{
+				this.posingUsedThisGposeSession = false;
+				enteredGpose = true;
+			}
+
+			if (wasInGpose && !isInGpose)
+			{
+				bool needsRestore = this.posingUsedThisGposeSession
+					|| this.posingEnabled
+					|| this.freezePhysics
+					|| this.freezeWorldVisualState;
+				this.ResetSessionStateLocked();
+				this.posingUsedThisGposeSession = false;
+				return needsRestore;
+			}
+
+			if (!isInGpose && (this.posingEnabled || this.freezeWorldVisualState))
+			{
+				this.ResetSessionStateLocked();
+			}
+
+			return false;
+		}
+	}
+
+	public void MarkPosingUsed()
+	{
+		lock (this.gate)
+		{
+			this.posingUsedThisGposeSession = true;
 		}
 	}
 
@@ -94,10 +210,24 @@ public sealed class BridgeIpcService
 						return Fail("Cannot enable posing outside GPose.");
 					}
 
+					if (request.Value.Value)
+					{
+						PrepareForPosingResult prepare = this.gposeController.PrepareForPosing();
+						if (prepare.DisabledFaceCamera || prepare.DisabledGazeCamera)
+						{
+							this.cameraSettleTicksRemaining = CameraSettleTicks;
+						}
+					}
+					else
+					{
+						this.cameraSettleTicksRemaining = 0;
+					}
+
 					this.posingEnabled = request.Value.Value;
 					if (this.posingEnabled)
 					{
 						this.freezePhysics = true;
+						this.posingUsedThisGposeSession = true;
 					}
 
 					this.SyncPosingHooks();
@@ -138,6 +268,16 @@ public sealed class BridgeIpcService
 					return Fail($"Unknown command '{command}'.");
 			}
 		}
+	}
+
+	private void ResetSessionStateLocked()
+	{
+		this.posingEnabled = false;
+		this.freezePhysics = false;
+		this.freezeWorldVisualState = false;
+		this.cameraSettleTicksRemaining = 0;
+		this.posingHooks.DisableAll();
+		this.SyncPosingHooks();
 	}
 
 	private void SyncPosingHooks()
