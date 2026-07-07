@@ -280,6 +280,33 @@ public sealed class WorldUpdateRequest
 	public bool? HoldWeather { get; init; }
 }
 
+public sealed class MotionResponse
+{
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; }
+
+	[JsonPropertyName("objectIndex")]
+	public int ObjectIndex { get; init; }
+
+	[JsonPropertyName("motionDisabled")]
+	public bool MotionDisabled { get; init; }
+
+	[JsonPropertyName("isMotionEnabled")]
+	public bool IsMotionEnabled { get; init; }
+
+	[JsonPropertyName("isInGpose")]
+	public bool IsInGpose { get; init; }
+
+	[JsonPropertyName("error")]
+	public string? Error { get; init; }
+}
+
+public sealed class MotionUpdateRequest
+{
+	[JsonPropertyName("motionDisabled")]
+	public bool? MotionDisabled { get; init; }
+}
+
 public sealed class TerritoryResponse
 {
 	[JsonPropertyName("territoryId")]
@@ -815,6 +842,42 @@ public sealed class CatalogItemDto
 
 	[JsonPropertyName("iconId")]
 	public uint IconId { get; init; }
+
+	[JsonPropertyName("equipLevel")]
+	public byte EquipLevel { get; init; }
+
+	[JsonPropertyName("itemLevel")]
+	public ushort ItemLevel { get; init; }
+
+	[JsonPropertyName("uiCategory")]
+	public string UiCategory { get; init; } = string.Empty;
+
+	[JsonPropertyName("description")]
+	public string Description { get; init; } = string.Empty;
+
+	[JsonPropertyName("category")]
+	public int Category { get; init; }
+
+	[JsonPropertyName("equipableClasses")]
+	public long EquipableClasses { get; init; }
+
+	[JsonPropertyName("equipRaceMask")]
+	public ushort EquipRaceMask { get; init; }
+
+	[JsonPropertyName("subSet")]
+	public ushort SubSet { get; init; }
+
+	[JsonPropertyName("subBase")]
+	public ushort SubBase { get; init; }
+
+	[JsonPropertyName("subVariant")]
+	public ushort SubVariant { get; init; }
+
+	[JsonPropertyName("isModded")]
+	public bool IsModded { get; init; }
+
+	[JsonPropertyName("modPack")]
+	public string ModPack { get; init; } = string.Empty;
 
 	public override string ToString() => this.Name;
 }

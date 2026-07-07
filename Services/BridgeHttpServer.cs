@@ -31,6 +31,7 @@ public sealed class BridgeHttpServer : IDisposable
 	private readonly BridgeTargetService targetService;
 	private readonly ActorAppearanceService appearanceService;
 	private readonly ActorRedrawService redrawService;
+	private readonly ActorMotionService motionService;
 	private readonly ActorSkeletonService skeletonService;
 	private readonly ActorEquipmentService equipmentService;
 	private readonly BridgeGameDataService gameDataService;
@@ -58,6 +59,7 @@ public sealed class BridgeHttpServer : IDisposable
 		BridgeTargetService targetService,
 		ActorAppearanceService appearanceService,
 		ActorRedrawService redrawService,
+		ActorMotionService motionService,
 		ActorSkeletonService skeletonService,
 		ActorEquipmentService equipmentService,
 		BridgeGameDataService gameDataService,
@@ -76,6 +78,7 @@ public sealed class BridgeHttpServer : IDisposable
 		this.targetService = targetService;
 		this.appearanceService = appearanceService;
 		this.redrawService = redrawService;
+		this.motionService = motionService;
 		this.skeletonService = skeletonService;
 		this.equipmentService = equipmentService;
 		this.gameDataService = gameDataService;
@@ -530,6 +533,8 @@ public sealed class BridgeHttpServer : IDisposable
 					"world.write",
 					"territory",
 					"actors",
+					"actors.motion.read",
+					"actors.motion.write",
 					"target",
 					"appearance.read",
 					"appearance.write.fullCustomize",
@@ -909,6 +914,73 @@ public sealed class BridgeHttpServer : IDisposable
 						Ok = false,
 						ObjectIndex = objectIndex,
 						Error = "Bone write failed.",
+					});
+					return;
+				}
+			}
+		}
+
+		if (path.Contains("/actors/", StringComparison.OrdinalIgnoreCase)
+			&& path.EndsWith("/motion", StringComparison.OrdinalIgnoreCase))
+		{
+			int actorsIndex = path.IndexOf("/actors/", StringComparison.OrdinalIgnoreCase);
+			int motionIndex = path.LastIndexOf("/motion", StringComparison.OrdinalIgnoreCase);
+			if (actorsIndex >= 0 && motionIndex > actorsIndex
+				&& int.TryParse(path[(actorsIndex + "/actors/".Length)..motionIndex], out int objectIndex))
+			{
+				if (method == "POST")
+				{
+					MotionUpdateRequest? request = DeserializeBody<MotionUpdateRequest>(body);
+					if (request == null)
+					{
+						this.WriteJson(stream, 400, new MotionResponse { Ok = false, ObjectIndex = objectIndex, Error = "Invalid request body." });
+						return;
+					}
+
+					MotionResponse? response = null;
+					if (!this.frameworkDispatcher.TryRun(
+						() => response = this.motionService.TrySetMotion(objectIndex, request),
+						out string? dispatchError))
+					{
+						this.WriteJson(stream, 503, new MotionResponse
+						{
+							Ok = false,
+							ObjectIndex = objectIndex,
+							Error = dispatchError ?? "Framework dispatch failed.",
+						});
+						return;
+					}
+
+					this.WriteJson(stream, response?.Ok == true ? 200 : 400, response ?? new MotionResponse
+					{
+						Ok = false,
+						ObjectIndex = objectIndex,
+						Error = "Motion write failed.",
+					});
+					return;
+				}
+
+				if (method == "GET")
+				{
+					MotionResponse? response = null;
+					if (!this.frameworkDispatcher.TryRun(
+						() => response = this.motionService.TryGetMotion(objectIndex),
+						out string? dispatchError))
+					{
+						this.WriteJson(stream, 503, new MotionResponse
+						{
+							Ok = false,
+							ObjectIndex = objectIndex,
+							Error = dispatchError ?? "Framework dispatch failed.",
+						});
+						return;
+					}
+
+					this.WriteJson(stream, response?.Ok == true ? 200 : 404, response ?? new MotionResponse
+					{
+						Ok = false,
+						ObjectIndex = objectIndex,
+						Error = "Motion read failed.",
 					});
 					return;
 				}

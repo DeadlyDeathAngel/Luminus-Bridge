@@ -60,6 +60,7 @@ public sealed class Plugin : IDalamudPlugin
 	private readonly AppearanceOverrideStore appearanceOverrides;
 	private readonly ActorAppearanceService appearanceService;
 	private readonly ActorRedrawService redrawService;
+	private readonly ActorMotionService motionService;
 	private readonly ActorSkeletonService skeletonService;
 	private readonly ActorEquipmentService equipmentService;
 	private readonly BridgeGameDataService gameDataService;
@@ -92,8 +93,9 @@ public sealed class Plugin : IDalamudPlugin
 		this.appearanceOverrides = new AppearanceOverrideStore();
 		this.appearanceService = new ActorAppearanceService(ObjectTable, this.appearanceOverrides);
 		this.redrawService = new ActorRedrawService(this.appearanceService);
+		this.motionService = new ActorMotionService(ObjectTable, this.gameState);
 		this.skeletonService = new ActorSkeletonService(ObjectTable);
-		this.gameDataService = new BridgeGameDataService(DataManager, Log);
+		this.gameDataService = new BridgeGameDataService(DataManager, PluginInterface, Log);
 		this.customizeOptionsService = new BridgeCustomizeOptionsService(DataManager, Log);
 		this.equipmentService = new ActorEquipmentService(ObjectTable, this.gameDataService, Log);
 		this.gposeControllerService = new BridgeGposeControllerService();
@@ -116,6 +118,7 @@ public sealed class Plugin : IDalamudPlugin
 			this.targetService,
 			this.appearanceService,
 			this.redrawService,
+			this.motionService,
 			this.skeletonService,
 			this.equipmentService,
 			this.gameDataService,

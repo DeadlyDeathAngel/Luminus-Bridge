@@ -4,6 +4,8 @@
 namespace AnamnesisBridge.Services;
 
 using AnamnesisBridge.Api;
+using AnamnesisBridge.GameData;
+using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using System;
@@ -34,10 +36,13 @@ public sealed class BridgeGameDataService
 	private readonly Dictionary<byte, DyeDto> dyesById = [];
 	private ColorEntryDto[]? allColors;
 
-	public BridgeGameDataService(IDataManager dataManager, IPluginLog log)
+	public BridgeGameDataService(IDataManager dataManager, IDalamudPluginInterface pluginInterface, IPluginLog log)
 	{
 		this.dataManager = dataManager;
 		this.log = log;
+		BridgeClassJobIndex.Initialize(dataManager);
+		BridgeEquipRaceIndex.Initialize(dataManager);
+		BridgeTexToolsIndex.Initialize(pluginInterface);
 	}
 
 	public IReadOnlyList<DyeDto> GetDyes()
@@ -345,11 +350,21 @@ public sealed class BridgeGameDataService
 					ushort set;
 					ushort modelBase;
 					ushort variant;
+					ushort subSet = 0;
+					ushort subBase = 0;
+					ushort subVariant = 0;
 					if (isWeapon)
 					{
 						set = (ushort)modelMain;
 						modelBase = (ushort)(modelMain >> 16);
 						variant = (ushort)(modelMain >> 32);
+						ulong modelSub = item.ModelSub;
+						if (modelSub != 0)
+						{
+							subSet = (ushort)modelSub;
+							subBase = (ushort)(modelSub >> 16);
+							subVariant = (ushort)(modelSub >> 32);
+						}
 					}
 					else
 					{
@@ -359,6 +374,8 @@ public sealed class BridgeGameDataService
 						variant = (byte)(modelMain >> 16);
 					}
 
+					byte restrictionId = (byte)Math.Min(item.EquipRestriction.RowId, byte.MaxValue);
+					bool isModded = BridgeTexToolsIndex.TryGetMod(name, out string modPack);
 					var dto = new CatalogItemDto
 					{
 						ItemId = item.RowId,
@@ -366,28 +383,37 @@ public sealed class BridgeGameDataService
 						Set = set,
 						Base = modelBase,
 						Variant = variant,
+						SubSet = subSet,
+						SubBase = subBase,
+						SubVariant = subVariant,
 						IconId = item.Icon,
+						EquipLevel = item.LevelEquip,
+						ItemLevel = (ushort)Math.Min(item.LevelItem.RowId, ushort.MaxValue),
+						UiCategory = item.ItemUICategory.ValueNullable?.Name.ToString() ?? string.Empty,
+						Description = item.Description.ToString(),
+						Category = BridgeItemCategoryIndex.GetCategory(item.RowId),
+						EquipableClasses = BridgeClassJobIndex.GetClasses((byte)Math.Min(item.ClassJobCategory.RowId, byte.MaxValue)),
+						EquipRaceMask = BridgeEquipRaceIndex.GetMask(restrictionId),
+						IsModded = isModded,
+						ModPack = modPack,
 					};
 
-					var key = (set, modelBase, variant);
-					if (!this.itemsByModel.TryGetValue(key, out List<CatalogItemDto>? modelList))
-					{
-						modelList = [];
-						this.itemsByModel[key] = modelList;
-					}
+					this.RegisterCatalogItem(dto, SlotsForItem(item));
+				}
 
-					modelList.Add(dto);
+				foreach ((CatalogItemDto item, IReadOnlyList<string> slots) in BridgeCatalogExtras.SpecialItems())
+				{
+					this.RegisterCatalogItem(item, slots);
+				}
 
-					foreach (string slot in SlotsForItem(item))
-					{
-						if (!this.itemsBySlot.TryGetValue(slot, out List<CatalogItemDto>? list))
-						{
-							list = [none];
-							this.itemsBySlot[slot] = list;
-						}
+				foreach ((CatalogItemDto item, IReadOnlyList<string> slots) in BridgeEquipmentIndex.LoadEntries())
+				{
+					this.RegisterCatalogItem(item, slots);
+				}
 
-						list.Add(dto);
-					}
+				foreach ((CatalogItemDto item, IReadOnlyList<string> slots) in BridgeCatalogExtras.PerformItems(this.dataManager))
+				{
+					this.RegisterCatalogItem(item, slots);
 				}
 
 				foreach (List<CatalogItemDto> list in this.itemsBySlot.Values)
@@ -575,6 +601,28 @@ public sealed class BridgeGameDataService
 		}
 
 		return result;
+	}
+
+	private void RegisterCatalogItem(CatalogItemDto dto, IEnumerable<string> slots)
+	{
+		var key = (dto.Set, dto.Base, dto.Variant);
+		if (!this.itemsByModel.TryGetValue(key, out List<CatalogItemDto>? modelList))
+		{
+			modelList = [];
+			this.itemsByModel[key] = modelList;
+		}
+
+		modelList.Add(dto);
+
+		foreach (string slot in slots)
+		{
+			if (!this.itemsBySlot.TryGetValue(slot, out List<CatalogItemDto>? list))
+			{
+				continue;
+			}
+
+			list.Add(dto);
+		}
 	}
 
 	private static IEnumerable<string> AllSlots()
