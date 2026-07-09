@@ -1,14 +1,14 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
-using AnamnesisBridge.Api;
+using LuminusBridge.Api;
 using System;
 
 /// <summary>
 /// In-process command IPC for the Linux host (replaces injected RemoteController shared-memory IPC).
-/// Tracks pose/freeze flags and applies what Dalamud can do safely without ANAMCTRL.
+/// Tracks pose/freeze flags and applies what Dalamud can do safely without LUMINUSCTRL.
 /// </summary>
 public sealed class BridgeIpcService
 {
@@ -103,7 +103,7 @@ public sealed class BridgeIpcService
 			return new BridgeIpcStatusDto
 			{
 				Ok = true,
-				Transport = "anamnesis-bridge-http",
+				Transport = "luminus-bridge-http",
 				SignedIn = state.SignedIn,
 				IsInGpose = state.IsInGpose,
 				PosingEnabled = this.posingEnabled,

@@ -1,9 +1,9 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge;
+namespace LuminusBridge;
 
-using AnamnesisBridge.Services;
+using LuminusBridge.Services;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
@@ -12,7 +12,7 @@ using Dalamud.Plugin.Services;
 using System;
 
 /// <summary>
-/// HTTP IPC for native Linux Anamnesis.
+/// HTTP IPC for native Linux Luminus.
 /// Idle on title screen; auto-starts when signed in (configurable). Blocking TCP accept uses no idle CPU.
 /// </summary>
 public sealed class Plugin : IDalamudPlugin
@@ -47,7 +47,7 @@ public sealed class Plugin : IDalamudPlugin
 	[PluginService]
 	internal static IGameInteropProvider InteropProvider { get; private set; } = null!;
 
-	private const string CommandName = "/anamnesisbridge";
+	private const string CommandName = "/luminusbridge";
 	private const int ActorCacheIntervalTicks = 60;
 	private const int MaxConsecutiveFrameworkFailures = 3;
 	private const int FrameworkCooldownTicks = 600;
@@ -61,6 +61,7 @@ public sealed class Plugin : IDalamudPlugin
 	private readonly ActorAppearanceService appearanceService;
 	private readonly ActorRedrawService redrawService;
 	private readonly ActorMotionService motionService;
+	private readonly ActorAnimationService animationService;
 	private readonly ActorSkeletonService skeletonService;
 	private readonly ActorEquipmentService equipmentService;
 	private readonly BridgeGameDataService gameDataService;
@@ -73,7 +74,7 @@ public sealed class Plugin : IDalamudPlugin
 	private readonly BridgeRuntimeCache runtimeCache;
 	private readonly FrameworkThreadDispatcher frameworkDispatcher;
 	private readonly BridgeHttpServer httpServer;
-	private readonly WindowSystem windowSystem = new("AnamnesisBridge");
+	private readonly WindowSystem windowSystem = new("LuminusBridge");
 	private readonly BridgeStatusWindow statusWindow;
 
 	private bool frameworkHooked;
@@ -94,6 +95,7 @@ public sealed class Plugin : IDalamudPlugin
 		this.appearanceService = new ActorAppearanceService(ObjectTable, this.appearanceOverrides);
 		this.redrawService = new ActorRedrawService(this.appearanceService);
 		this.motionService = new ActorMotionService(ObjectTable, this.gameState);
+		this.animationService = new ActorAnimationService(ObjectTable, this.gameState, SigScanner);
 		this.skeletonService = new ActorSkeletonService(ObjectTable);
 		this.gameDataService = new BridgeGameDataService(DataManager, PluginInterface, Log);
 		this.customizeOptionsService = new BridgeCustomizeOptionsService(DataManager, Log);
@@ -119,6 +121,7 @@ public sealed class Plugin : IDalamudPlugin
 			this.appearanceService,
 			this.redrawService,
 			this.motionService,
+			this.animationService,
 			this.skeletonService,
 			this.equipmentService,
 			this.gameDataService,
@@ -146,16 +149,16 @@ public sealed class Plugin : IDalamudPlugin
 		PluginInterface.UiBuilder.OpenConfigUi += this.OnOpenConfigUi;
 		CommandManager.AddHandler(CommandName, new CommandInfo(this.OnCommand)
 		{
-			HelpMessage = "Open Anamnesis Bridge status (HTTP IPC auto-starts when signed in).",
+			HelpMessage = "Open Luminus Bridge status (HTTP IPC auto-starts when signed in).",
 		});
 
 		this.gameState.Update();
 		this.ipcService.InitializeGposeState(this.gameState.Current.IsInGpose);
 		this.TryAutoStartSession();
 		Log.Information(
-			"AnamnesisBridge loaded. " +
+			"LuminusBridge loaded. " +
 			(this.httpServer.IsRunning
-				? $"Listening on http://127.0.0.1:{this.Configuration.Port}/anamnesis/v1/"
+				? $"Listening on http://127.0.0.1:{this.Configuration.Port}/luminus/v1/"
 				: "Idle on title screen; auto-starts when signed in."));
 	}
 
@@ -169,6 +172,7 @@ public sealed class Plugin : IDalamudPlugin
 		this.StopDrawHook();
 		this.httpServer.Dispose();
 		this.worldService.Dispose();
+		this.animationService.Dispose();
 		this.cameraService.Dispose();
 		this.posingHooks.Dispose();
 
@@ -257,7 +261,7 @@ public sealed class Plugin : IDalamudPlugin
 		this.StopListener();
 		if (wasListening)
 		{
-			Log.Information("AnamnesisBridge idle (logged out).");
+			Log.Information("LuminusBridge idle (logged out).");
 		}
 	}
 
@@ -305,7 +309,7 @@ public sealed class Plugin : IDalamudPlugin
 		string reason = this.httpServer.HasRecentClientActivity
 			? "client connected"
 			: "signed in";
-		Log.Information($"AnamnesisBridge framework polling enabled ({reason}).");
+		Log.Information($"LuminusBridge framework polling enabled ({reason}).");
 	}
 
 	private void StartDrawHook()
@@ -442,7 +446,7 @@ public sealed class Plugin : IDalamudPlugin
 		catch (Exception ex)
 		{
 			this.consecutiveFrameworkFailures++;
-			Log.Warning(ex, "AnamnesisBridge framework update failed.");
+			Log.Warning(ex, "LuminusBridge framework update failed.");
 			if (this.consecutiveFrameworkFailures >= MaxConsecutiveFrameworkFailures)
 			{
 				this.frameworkCooldownRemaining = FrameworkCooldownTicks;
@@ -464,7 +468,7 @@ public sealed class Plugin : IDalamudPlugin
 		this.StartDrawHook();
 		GameStateSnapshot state = this.gameState.Current;
 		Log.Information(
-			$"AnamnesisBridge: http://127.0.0.1:{this.Configuration.Port}/anamnesis/v1/ | " +
+			$"LuminusBridge: http://127.0.0.1:{this.Configuration.Port}/luminus/v1/ | " +
 			$"listening={this.httpServer.IsRunning} signedIn={state.SignedIn}");
 	}
 }

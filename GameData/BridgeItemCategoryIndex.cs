@@ -1,7 +1,7 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.GameData;
+namespace LuminusBridge.GameData;
 
 using System;
 using System.Collections.Generic;
@@ -46,7 +46,7 @@ internal static class BridgeItemCategoryIndex
 			return;
 		}
 
-		using var document = JsonDocument.Parse(stream);
+		using var document = JsonDocument.Parse(stream, BridgeEmbeddedJson.DocumentOptions);
 		foreach (JsonProperty property in document.RootElement.EnumerateObject())
 		{
 			if (!uint.TryParse(property.Name, out uint itemId))

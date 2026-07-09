@@ -1,7 +1,7 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.GameData;
+namespace LuminusBridge.GameData;
 
 using System;
 using Dalamud.Plugin.Services;

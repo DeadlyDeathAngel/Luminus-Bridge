@@ -1,9 +1,9 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
-using AnamnesisBridge.Api;
+using LuminusBridge.Api;
 using Dalamud.Plugin.Services;
 using System;
 using System.IO;
@@ -11,10 +11,11 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 
 /// <summary>
-/// Localhost HTTP server for native Linux Anamnesis.
+/// Localhost HTTP server for native Linux Luminus.
 /// Dedicated thread + blocking Accept (no async spin under Wine).
 /// </summary>
 public sealed class BridgeHttpServer : IDisposable
@@ -23,6 +24,7 @@ public sealed class BridgeHttpServer : IDisposable
 	{
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
 		WriteIndented = false,
+		NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
 	};
 
 	private readonly IPluginLog log;
@@ -32,6 +34,7 @@ public sealed class BridgeHttpServer : IDisposable
 	private readonly ActorAppearanceService appearanceService;
 	private readonly ActorRedrawService redrawService;
 	private readonly ActorMotionService motionService;
+	private readonly ActorAnimationService animationService;
 	private readonly ActorSkeletonService skeletonService;
 	private readonly ActorEquipmentService equipmentService;
 	private readonly BridgeGameDataService gameDataService;
@@ -60,6 +63,7 @@ public sealed class BridgeHttpServer : IDisposable
 		ActorAppearanceService appearanceService,
 		ActorRedrawService redrawService,
 		ActorMotionService motionService,
+		ActorAnimationService animationService,
 		ActorSkeletonService skeletonService,
 		ActorEquipmentService equipmentService,
 		BridgeGameDataService gameDataService,
@@ -79,6 +83,7 @@ public sealed class BridgeHttpServer : IDisposable
 		this.appearanceService = appearanceService;
 		this.redrawService = redrawService;
 		this.motionService = motionService;
+		this.animationService = animationService;
 		this.skeletonService = skeletonService;
 		this.equipmentService = equipmentService;
 		this.gameDataService = gameDataService;
@@ -122,12 +127,12 @@ public sealed class BridgeHttpServer : IDisposable
 		this.listenThread = new Thread(this.ListenLoop)
 		{
 			IsBackground = true,
-			Name = "AnamnesisBridge.Http",
+			Name = "LuminusBridge.Http",
 			Priority = ThreadPriority.BelowNormal,
 		};
 		this.listenThread.Start();
 
-		this.log.Information($"AnamnesisBridge listening on http://127.0.0.1:{this.port}/anamnesis/v1/");
+		this.log.Information($"LuminusBridge listening on http://127.0.0.1:{this.port}/luminus/v1/");
 	}
 
 	public void Stop()
@@ -190,7 +195,7 @@ public sealed class BridgeHttpServer : IDisposable
 			{
 				if (this.running)
 				{
-					this.log.Warning(ex, "AnamnesisBridge accept error.");
+					this.log.Warning(ex, "LuminusBridge accept error.");
 					Thread.Sleep(100);
 				}
 			}
@@ -226,7 +231,7 @@ public sealed class BridgeHttpServer : IDisposable
 			}
 			catch (Exception ex)
 			{
-				this.log.Warning(ex, "AnamnesisBridge request failed.");
+				this.log.Warning(ex, "LuminusBridge request failed.");
 				try
 				{
 					this.WriteJson(stream, 500, new ErrorResponse { Ok = false, Error = ex.Message });
@@ -535,6 +540,8 @@ public sealed class BridgeHttpServer : IDisposable
 					"actors",
 					"actors.motion.read",
 					"actors.motion.write",
+					"actors.animation.read",
+					"actors.animation.write",
 					"target",
 					"appearance.read",
 					"appearance.write.fullCustomize",
@@ -544,6 +551,7 @@ public sealed class BridgeHttpServer : IDisposable
 					"gameData.items",
 					"gameData.dyes",
 					"gameData.weathers",
+					"gameData.emotes",
 					"gameData.colors",
 					"gameData.customizeOptions",
 					"skeleton.read",
@@ -565,6 +573,12 @@ public sealed class BridgeHttpServer : IDisposable
 		if (path.EndsWith("/game-data/weathers", StringComparison.OrdinalIgnoreCase) && method == "GET")
 		{
 			this.WriteJson(stream, 200, new WeathersResponse { Weathers = this.gameDataService.GetWeathers() });
+			return;
+		}
+
+		if (path.EndsWith("/game-data/emotes", StringComparison.OrdinalIgnoreCase) && method == "GET")
+		{
+			this.WriteJson(stream, 200, new EmotesResponse { Emotes = this.gameDataService.GetEmotes() });
 			return;
 		}
 
@@ -981,6 +995,73 @@ public sealed class BridgeHttpServer : IDisposable
 						Ok = false,
 						ObjectIndex = objectIndex,
 						Error = "Motion read failed.",
+					});
+					return;
+				}
+			}
+		}
+
+		if (path.Contains("/actors/", StringComparison.OrdinalIgnoreCase)
+			&& path.EndsWith("/animation", StringComparison.OrdinalIgnoreCase))
+		{
+			int actorsIndex = path.IndexOf("/actors/", StringComparison.OrdinalIgnoreCase);
+			int animationIndex = path.LastIndexOf("/animation", StringComparison.OrdinalIgnoreCase);
+			if (actorsIndex >= 0 && animationIndex > actorsIndex
+				&& int.TryParse(path[(actorsIndex + "/actors/".Length)..animationIndex], out int objectIndex))
+			{
+				if (method == "POST")
+				{
+					AnimationUpdateRequest? request = DeserializeBody<AnimationUpdateRequest>(body);
+					if (request == null)
+					{
+						this.WriteJson(stream, 400, new AnimationResponse { Ok = false, ObjectIndex = objectIndex, Error = "Invalid request body." });
+						return;
+					}
+
+					AnimationResponse? response = null;
+					if (!this.frameworkDispatcher.TryRun(
+						() => response = this.animationService.TrySetAnimation(objectIndex, request),
+						out string? dispatchError))
+					{
+						this.WriteJson(stream, 503, new AnimationResponse
+						{
+							Ok = false,
+							ObjectIndex = objectIndex,
+							Error = dispatchError ?? "Framework dispatch failed.",
+						});
+						return;
+					}
+
+					this.WriteJson(stream, response?.Ok == true ? 200 : 400, response ?? new AnimationResponse
+					{
+						Ok = false,
+						ObjectIndex = objectIndex,
+						Error = "Animation write failed.",
+					});
+					return;
+				}
+
+				if (method == "GET")
+				{
+					AnimationResponse? response = null;
+					if (!this.frameworkDispatcher.TryRun(
+						() => response = this.animationService.TryGetAnimation(objectIndex),
+						out string? dispatchError))
+					{
+						this.WriteJson(stream, 503, new AnimationResponse
+						{
+							Ok = false,
+							ObjectIndex = objectIndex,
+							Error = dispatchError ?? "Framework dispatch failed.",
+						});
+						return;
+					}
+
+					this.WriteJson(stream, response?.Ok == true ? 200 : 404, response ?? new AnimationResponse
+					{
+						Ok = false,
+						ObjectIndex = objectIndex,
+						Error = "Animation read failed.",
 					});
 					return;
 				}

@@ -1,7 +1,7 @@
-// © Anamnesis.
+// © Luminus.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Pose;
+namespace LuminusBridge.Pose;
 
 using System;
 

@@ -1,10 +1,10 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
-using AnamnesisBridge.Api;
-using AnamnesisBridge.Pose;
+using LuminusBridge.Api;
+using LuminusBridge.Pose;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
@@ -20,7 +20,7 @@ using System.Runtime.InteropServices;
 using CharacterBase = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase;
 
 /// <summary>
-/// Control-plane skeleton read/write (0.2.7.0). Uses model-space pose arrays (same as desktop Anamnesis).
+/// Control-plane skeleton read/write (0.2.7.0). Uses model-space pose arrays (same as desktop Luminus).
 /// </summary>
 public sealed unsafe class ActorSkeletonService
 {
@@ -77,11 +77,18 @@ public sealed unsafe class ActorSkeletonService
 
 					if (boneIndex < hkaSkeleton->Bones.Length)
 					{
-						hkaBone bone = hkaSkeleton->Bones[boneIndex];
-						string? boneName = bone.Name.String;
-						if (!string.IsNullOrWhiteSpace(boneName))
+						try
 						{
-							name = boneName;
+							hkaBone bone = hkaSkeleton->Bones[boneIndex];
+							string? boneName = bone.Name.String;
+							if (!string.IsNullOrWhiteSpace(boneName))
+							{
+								name = boneName;
+							}
+						}
+						catch
+						{
+							// Keep fallback name when Havok string read fails mid-pose.
 						}
 					}
 
@@ -91,16 +98,16 @@ public sealed unsafe class ActorSkeletonService
 						Partial = partial,
 						Index = boneIndex,
 						Depth = GetBoneDepth(hkaSkeleton, boneIndex),
-						PosX = hasTransform ? model.Translation.X : 0f,
-						PosY = hasTransform ? model.Translation.Y : 0f,
-						PosZ = hasTransform ? model.Translation.Z : 0f,
-						RotX = hasTransform ? model.Rotation.X : 0f,
-						RotY = hasTransform ? model.Rotation.Y : 0f,
-						RotZ = hasTransform ? model.Rotation.Z : 0f,
-						RotW = hasTransform ? model.Rotation.W : 1f,
-						ScaleX = hasTransform ? model.Scale.X : 1f,
-						ScaleY = hasTransform ? model.Scale.Y : 1f,
-						ScaleZ = hasTransform ? model.Scale.Z : 1f,
+						PosX = SanitizeFloat(hasTransform ? model.Translation.X : 0f),
+						PosY = SanitizeFloat(hasTransform ? model.Translation.Y : 0f),
+						PosZ = SanitizeFloat(hasTransform ? model.Translation.Z : 0f),
+						RotX = SanitizeFloat(hasTransform ? model.Rotation.X : 0f),
+						RotY = SanitizeFloat(hasTransform ? model.Rotation.Y : 0f),
+						RotZ = SanitizeFloat(hasTransform ? model.Rotation.Z : 0f),
+						RotW = SanitizeFloat(hasTransform ? model.Rotation.W : 1f),
+						ScaleX = SanitizeFloat(hasTransform ? model.Scale.X : 1f),
+						ScaleY = SanitizeFloat(hasTransform ? model.Scale.Y : 1f),
+						ScaleZ = SanitizeFloat(hasTransform ? model.Scale.Z : 1f),
 					});
 				}
 			}
@@ -210,14 +217,17 @@ public sealed unsafe class ActorSkeletonService
 			var expressionBones = new Dictionary<string, ApplyPoseBoneDto>(StringComparer.Ordinal);
 			foreach ((string name, ApplyPoseBoneDto bone) in request.Bones)
 			{
-				if (PoseBoneFilter.ShouldInclude(name, PoseImportScope.BodyOnly))
+				if (PoseBoneFilter.ShouldInclude(name, PoseImportScope.BodyOnly, request.BrioStyleBodyPass))
 				{
 					bodyBones[name] = bone;
 				}
 
-				if (PoseBoneFilter.ShouldInclude(name, PoseImportScope.ExpressionOnly))
+				if (!request.SkipExpressionPass
+					&& PoseBoneFilter.ShouldInclude(name, PoseImportScope.ExpressionOnly))
 				{
-					expressionBones[name] = bone;
+					expressionBones[name] = request.ExpressionApplyPosition
+						? bone
+						: StripPositions(bone);
 				}
 			}
 
@@ -266,7 +276,7 @@ public sealed unsafe class ActorSkeletonService
 			int totalApplied = bodyResponse.AppliedCount + expressionResponse.AppliedCount;
 			int totalSkipped = bodyResponse.SkippedCount + expressionResponse.SkippedCount;
 
-			if (request.ApplyPosition)
+			if (request.ApplyPosition && request.HairPositionPass)
 			{
 				var hairBones = new Dictionary<string, ApplyPoseBoneDto>(StringComparer.Ordinal);
 				foreach ((string name, ApplyPoseBoneDto bone) in request.Bones)
@@ -347,8 +357,18 @@ public sealed unsafe class ActorSkeletonService
 					continue;
 				}
 
-				if (!boneIndex.TryGetValue(boneName, out BoneTransformDto? target)
+				BoneTransformDto? target = null;
+				if (!boneIndex.TryGetValue(boneName, out target)
 					&& !boneIndex.TryGetValue(rawName, out target))
+				{
+					string? resolved = PoseHairBoneResolver.ResolveTargetBoneName(rawName, boneIndex);
+					if (resolved != null)
+					{
+						boneIndex.TryGetValue(resolved, out target);
+					}
+				}
+
+				if (target == null)
 				{
 					skipped++;
 					continue;
@@ -686,6 +706,24 @@ public sealed unsafe class ActorSkeletonService
 			ObjectIndex = objectIndex,
 			Error = error,
 		};
+
+	private static ApplyPoseBoneDto StripPositions(ApplyPoseBoneDto bone)
+		=> new()
+		{
+			PosX = null,
+			PosY = null,
+			PosZ = null,
+			RotX = bone.RotX,
+			RotY = bone.RotY,
+			RotZ = bone.RotZ,
+			RotW = bone.RotW,
+			ScaleX = bone.ScaleX,
+			ScaleY = bone.ScaleY,
+			ScaleZ = bone.ScaleZ,
+		};
+
+	private static float SanitizeFloat(float value)
+		=> float.IsFinite(value) ? value : 0f;
 
 	[StructLayout(LayoutKind.Sequential)]
 	private struct ActorSceneTransform

@@ -1,9 +1,9 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
-using AnamnesisBridge.Api;
+using LuminusBridge.Api;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using System;

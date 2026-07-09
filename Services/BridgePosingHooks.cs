@@ -1,7 +1,7 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
@@ -144,7 +144,7 @@ public sealed class BridgePosingHooks : IDisposable
 		}
 
 		this.physicsHookInitialized = true;
-		this.log.Information("AnamnesisBridge physics freeze hook active.");
+		this.log.Information("LuminusBridge physics freeze hook active.");
 	}
 
 	private void EnsureSyncModelHook()
@@ -163,7 +163,7 @@ public sealed class BridgePosingHooks : IDisposable
 		}
 
 		this.syncHookInitialized = true;
-		this.log.Information("AnamnesisBridge pose sync hook active.");
+		this.log.Information("LuminusBridge pose sync hook active.");
 	}
 
 	private unsafe void EnsureCalculateBoneHook()
@@ -176,7 +176,7 @@ public sealed class BridgePosingHooks : IDisposable
 		nint address = this.ResolveCalculateBoneModelSpaceAddress();
 		if (address == nint.Zero)
 		{
-			this.log.Warning("AnamnesisBridge could not resolve hkaPose.CalculateBoneModelSpace.");
+			this.log.Warning("LuminusBridge could not resolve hkaPose.CalculateBoneModelSpace.");
 			return;
 		}
 
@@ -187,11 +187,11 @@ public sealed class BridgePosingHooks : IDisposable
 				this.DetourCalculateBoneModelSpace);
 			this.hookCalculateBone.Enable();
 			this.calculateHookInitialized = true;
-			this.log.Information("AnamnesisBridge calculate bone model-space hook active.");
+			this.log.Information("LuminusBridge calculate bone model-space hook active.");
 		}
 		catch (Exception ex)
 		{
-			this.log.Warning(ex, "Failed to create AnamnesisBridge calculate bone hook.");
+			this.log.Warning(ex, "Failed to create LuminusBridge calculate bone hook.");
 		}
 	}
 
@@ -211,7 +211,7 @@ public sealed class BridgePosingHooks : IDisposable
 		}
 
 		this.lookAtHookInitialized = true;
-		this.log.Information("AnamnesisBridge look-at IK hook active.");
+		this.log.Information("LuminusBridge look-at IK hook active.");
 	}
 
 	private void EnsureKineDriverHook()
@@ -230,7 +230,7 @@ public sealed class BridgePosingHooks : IDisposable
 		}
 
 		this.kineDriverHookInitialized = true;
-		this.log.Information("AnamnesisBridge kine driver hook active.");
+		this.log.Information("LuminusBridge kine driver hook active.");
 	}
 
 	private void EnsureWorldHooks()
@@ -243,7 +243,7 @@ public sealed class BridgePosingHooks : IDisposable
 		nint address = this.ResolveSetPositionAddress();
 		if (address == nint.Zero)
 		{
-			this.log.Warning("AnamnesisBridge could not resolve GameObject.SetPosition for world freeze.");
+			this.log.Warning("LuminusBridge could not resolve GameObject.SetPosition for world freeze.");
 			return;
 		}
 
@@ -254,11 +254,11 @@ public sealed class BridgePosingHooks : IDisposable
 				this.DetourSetPosition);
 			this.hookSetPosition.Enable();
 			this.worldHookInitialized = true;
-			this.log.Information("AnamnesisBridge world freeze hook active.");
+			this.log.Information("LuminusBridge world freeze hook active.");
 		}
 		catch (Exception ex)
 		{
-			this.log.Warning(ex, "Failed to create AnamnesisBridge world freeze hook.");
+			this.log.Warning(ex, "Failed to create LuminusBridge world freeze hook.");
 		}
 	}
 
@@ -281,7 +281,7 @@ public sealed class BridgePosingHooks : IDisposable
 		}
 		catch (Exception ex)
 		{
-			this.log.Warning(ex, $"Failed to create posing hook for {signature}");
+			this.log.Warning(ex, $"Optional posing hook unavailable for {signature}");
 			return false;
 		}
 	}
@@ -420,7 +420,7 @@ public sealed class BridgePosingHooks : IDisposable
 	[UnmanagedFunctionPointer(CallingConvention.ThisCall)]
 	private delegate nint SetPositionDelegate(nint goPtr, float x, float y, float z);
 
-	[UnmanagedFunctionPointer(CallingConvention.FastCall)]
+	[UnmanagedFunctionPointer(CallingConvention.Winapi)]
 	private unsafe delegate byte* LookAtIkSolveDelegate(
 		byte* a1,
 		nint a2,

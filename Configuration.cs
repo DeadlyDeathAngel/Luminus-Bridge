@@ -1,7 +1,7 @@
-// © Anamnesis.
+// © Luminus.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge;
+namespace LuminusBridge;
 
 using Dalamud.Configuration;
 using System;

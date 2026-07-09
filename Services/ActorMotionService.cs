@@ -1,20 +1,20 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
-using AnamnesisBridge.Api;
+using LuminusBridge.Api;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using System;
 
 /// <summary>
-/// Reads/writes GPose actor motion disable (Anamnesis <c>ActorMemory.IsMotionDisabled</c> @ 0x1BA4).
+/// Reads/writes GPose actor motion disable (Luminus <c>ActorMemory.IsMotionDisabled</c> @ 0x1BA4).
 /// </summary>
 public sealed unsafe class ActorMotionService
 {
-	// Matches Anamnesis.ActorMemory.IsMotionDisabled bind offset.
+	// Matches Luminus.ActorMemory.IsMotionDisabled bind offset.
 	private const int IsMotionDisabledOffset = 0x1BA4;
 
 	private readonly IObjectTable objectTable;

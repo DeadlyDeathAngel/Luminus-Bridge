@@ -1,11 +1,11 @@
-// © Anamnesis.
+// © Luminus.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Pose;
+namespace LuminusBridge.Pose;
 
 using System.Collections.Generic;
 
-/// <summary>Maps legacy Brio / pre-Anamnesis bone names to modern FFXIV names.</summary>
+/// <summary>Maps legacy Brio / pre-Luminus bone names to modern FFXIV names.</summary>
 public static class LegacyBoneNameConverter
 {
 	private static readonly Dictionary<string, string> s_modernToLegacy = new();

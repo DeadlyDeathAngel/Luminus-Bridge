@@ -1,23 +1,24 @@
 [
   {
     "Author": "DeadlyDeathAngel",
-    "Name": "Anamnesis Bridge",
-    "Punchline": "HTTP bridge for native Linux Anamnesis.",
+    "Name": "Luminus Bridge",
+    "Punchline": "HTTP bridge for native Linux Luminus.",
     "Description": "Exposes GPose, camera, world time/weather, territory, actors, appearance, equipment, skeleton posing, pose IPC, and game data over localhost HTTP. Auto-starts when signed in.",
-    "InternalName": "AnamnesisBridge",
-    "AssemblyVersion": "0.2.9.2",
-    "RepoUrl": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge",
+    "InternalName": "LuminusBridge",
+    "AssemblyVersion": "0.2.12.0",
+    "RepoUrl": "https://github.com/DeadlyDeathAngel/Luminus-Bridge",
+    "IconUrl": "https://raw.githubusercontent.com/DeadlyDeathAngel/Luminus-Bridge/main/images/icon.png",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
     "Tags": [
-      "anamnesis",
+      "luminus",
       "gpose",
       "linux",
       "bridge"
     ],
-    "DownloadLinkInstall": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge/releases/download/v0.2.9.2/AnamnesisBridge.zip",
-    "DownloadLinkUpdate": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge/releases/download/v0.2.9.2/AnamnesisBridge.zip",
-    "DownloadLinkTesting": "https://github.com/DeadlyDeathAngel/Anamnesis-Bridge/releases/download/v0.2.9.2/AnamnesisBridge.zip",
-    "LastUpdate": "1783440000"
+    "DownloadLinkInstall": "https://github.com/DeadlyDeathAngel/Luminus-Bridge/releases/download/v0.2.12.0/LuminusBridge.zip",
+    "DownloadLinkUpdate": "https://github.com/DeadlyDeathAngel/Luminus-Bridge/releases/download/v0.2.12.0/LuminusBridge.zip",
+    "DownloadLinkTesting": "https://github.com/DeadlyDeathAngel/Luminus-Bridge/releases/download/v0.2.12.0/LuminusBridge.zip",
+    "LastUpdate": "1783612800"
   }
 ]

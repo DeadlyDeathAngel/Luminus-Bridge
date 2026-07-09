@@ -1,7 +1,7 @@
-// © Anamnesis.
+// © Luminus.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Api;
+namespace LuminusBridge.Api;
 
 using System;
 using System.Collections.Generic;
@@ -13,7 +13,7 @@ public sealed class HealthResponse
 	public bool Ok { get; init; } = true;
 
 	[JsonPropertyName("plugin")]
-	public string Plugin { get; init; } = "AnamnesisBridge";
+	public string Plugin { get; init; } = "LuminusBridge";
 
 	[JsonPropertyName("version")]
 	public string Version { get; init; } = Services.BridgeVersion.Current;
@@ -305,6 +305,63 @@ public sealed class MotionUpdateRequest
 {
 	[JsonPropertyName("motionDisabled")]
 	public bool? MotionDisabled { get; init; }
+}
+
+public sealed class AnimationResponse
+{
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; }
+
+	[JsonPropertyName("objectIndex")]
+	public int ObjectIndex { get; init; }
+
+	[JsonPropertyName("baseAnimationId")]
+	public ushort BaseAnimationId { get; init; }
+
+	[JsonPropertyName("fullBodyAnimationId")]
+	public ushort FullBodyAnimationId { get; init; }
+
+	[JsonPropertyName("speed")]
+	public float Speed { get; init; }
+
+	[JsonPropertyName("linkSpeeds")]
+	public bool LinkSpeeds { get; init; }
+
+	[JsonPropertyName("isOverridden")]
+	public bool IsOverridden { get; init; }
+
+	[JsonPropertyName("characterMode")]
+	public byte CharacterMode { get; init; }
+
+	[JsonPropertyName("speedControlEnabled")]
+	public bool SpeedControlEnabled { get; init; }
+
+	[JsonPropertyName("isInGpose")]
+	public bool IsInGpose { get; init; }
+
+	[JsonPropertyName("error")]
+	public string? Error { get; init; }
+}
+
+public sealed class AnimationUpdateRequest
+{
+	[JsonPropertyName("baseAnimationId")]
+	public ushort? BaseAnimationId { get; init; }
+
+	[JsonPropertyName("interrupt")]
+	public bool? Interrupt { get; init; }
+
+	[JsonPropertyName("reset")]
+	public bool? Reset { get; init; }
+
+	[JsonPropertyName("preset")]
+	public string? Preset { get; init; }
+
+	[JsonPropertyName("speed")]
+	public float? Speed { get; init; }
+
+	[JsonPropertyName("linkSpeeds")]
+	public bool? LinkSpeeds { get; init; }
 }
 
 public sealed class TerritoryResponse
@@ -696,6 +753,15 @@ public sealed class ApplyPoseRequest
 	[JsonPropertyName("brioStyleBodyPass")]
 	public bool BrioStyleBodyPass { get; init; }
 
+	[JsonPropertyName("skipExpressionPass")]
+	public bool SkipExpressionPass { get; init; }
+
+	[JsonPropertyName("hairPositionPass")]
+	public bool HairPositionPass { get; init; } = true;
+
+	[JsonPropertyName("expressionApplyPosition")]
+	public bool ExpressionApplyPosition { get; init; } = true;
+
 	[JsonPropertyName("applyModelTransform")]
 	public bool ApplyModelTransform { get; init; }
 
@@ -959,6 +1025,33 @@ public sealed class WeathersResponse
 	public IReadOnlyList<WeatherDto> Weathers { get; init; } = [];
 }
 
+public sealed class EmoteCatalogDto
+{
+	[JsonPropertyName("name")]
+	public string Name { get; init; } = string.Empty;
+
+	[JsonPropertyName("animationId")]
+	public ushort AnimationId { get; init; }
+
+	[JsonPropertyName("variant")]
+	public string Variant { get; init; } = "Loop";
+
+	[JsonPropertyName("timelineKey")]
+	public string TimelineKey { get; init; } = string.Empty;
+
+	[JsonPropertyName("iconId")]
+	public uint IconId { get; init; }
+}
+
+public sealed class EmotesResponse
+{
+	[JsonPropertyName("ok")]
+	public bool Ok { get; init; } = true;
+
+	[JsonPropertyName("emotes")]
+	public IReadOnlyList<EmoteCatalogDto> Emotes { get; init; } = [];
+}
+
 public sealed class ColorsResponse
 {
 	[JsonPropertyName("ok")]
@@ -1054,7 +1147,7 @@ public sealed class BridgeIpcStatusDto
 	public bool Ok { get; init; }
 
 	[JsonPropertyName("transport")]
-	public string Transport { get; init; } = "anamnesis-bridge-http";
+	public string Transport { get; init; } = "luminus-bridge-http";
 
 	[JsonPropertyName("signedIn")]
 	public bool SignedIn { get; init; }

@@ -1,4 +1,4 @@
-namespace AnamnesisBridge.GameData;
+namespace LuminusBridge.GameData;
 
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;

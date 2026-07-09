@@ -1,7 +1,7 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
@@ -10,8 +10,8 @@ using System;
 using System.Numerics;
 
 /// <summary>
-/// GPose camera read/write using the same field layout as desktop Anamnesis
-/// (<see cref="Anamnesis.Memory.CameraMemory"/> / GPose target position).
+/// GPose camera read/write using the same field layout as desktop Luminus
+/// (<see cref="Luminus.Memory.CameraMemory"/> / GPose target position).
 /// Values are held and re-applied after each camera update so the game cannot snap back.
 /// </summary>
 public sealed unsafe class BridgeCameraService : IDisposable
@@ -306,7 +306,7 @@ public sealed unsafe class BridgeCameraService : IDisposable
 			nint address = this.sigScanner.ScanText(CameraUpdateSignature);
 			if (address == nint.Zero)
 			{
-				this.log.Warning("AnamnesisBridge camera update hook signature not found.");
+				this.log.Warning("LuminusBridge camera update hook signature not found.");
 				return;
 			}
 
@@ -315,11 +315,11 @@ public sealed unsafe class BridgeCameraService : IDisposable
 				this.CameraUpdateDetour);
 			this.cameraUpdateHook.Enable();
 			this.cameraUpdateHookInitialized = true;
-			this.log.Information("AnamnesisBridge camera hold hook active.");
+			this.log.Information("LuminusBridge camera hold hook active.");
 		}
 		catch (Exception ex)
 		{
-			this.log.Warning(ex, "Failed to create AnamnesisBridge camera hold hook.");
+			this.log.Warning(ex, "Failed to create LuminusBridge camera hold hook.");
 		}
 	}
 

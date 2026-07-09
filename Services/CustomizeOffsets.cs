@@ -1,10 +1,10 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
 /// <summary>
-/// Raw customize byte offsets (matches Anamnesis ActorCustomizeMemory / game CustomizeData).
+/// Raw customize byte offsets (matches Luminus ActorCustomizeMemory / game CustomizeData).
 /// </summary>
 internal static class CustomizeOffsets
 {

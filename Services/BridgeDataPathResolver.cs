@@ -1,11 +1,11 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
 /// <summary>
 /// Maps tribe/gender/age to chara/human data path IDs for asset existence checks.
-/// Mirrors desktop <see cref="Anamnesis.GameData.DataPathResolver"/>.
+/// Mirrors desktop <see cref="Luminus.GameData.DataPathResolver"/>.
 /// </summary>
 internal static class BridgeDataPathResolver
 {

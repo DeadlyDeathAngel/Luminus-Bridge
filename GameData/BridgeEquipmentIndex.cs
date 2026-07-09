@@ -1,7 +1,7 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.GameData;
+namespace LuminusBridge.GameData;
 
 using System;
 using System.Collections.Generic;
@@ -10,7 +10,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using AnamnesisBridge.Api;
+using LuminusBridge.Api;
 
 internal sealed class EquipmentJsonRow
 {
@@ -45,7 +45,7 @@ internal static class BridgeEquipmentIndex
 			yield break;
 		}
 
-		List<EquipmentJsonRow>? rows = JsonSerializer.Deserialize<List<EquipmentJsonRow>>(stream);
+		List<EquipmentJsonRow>? rows = JsonSerializer.Deserialize<List<EquipmentJsonRow>>(stream, BridgeEmbeddedJson.SerializerOptions);
 		if (rows == null)
 		{
 			yield break;

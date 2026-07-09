@@ -1,7 +1,7 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
@@ -28,7 +28,7 @@ public sealed class BridgeStatusWindow : Window, IDisposable
 		Func<GameStateSnapshot> getState,
 		Func<bool> isListening,
 		Action? onRestartRequested = null)
-		: base("Anamnesis Bridge")
+		: base("Luminus Bridge")
 	{
 		this.getConfiguration = getConfiguration;
 		this.getState = getState;
@@ -57,7 +57,7 @@ public sealed class BridgeStatusWindow : Window, IDisposable
 
 		GameStateSnapshot state = this.getState();
 		ImGui.TextUnformatted($"HTTP: {(this.isListening() ? "listening" : "stopped")}");
-		ImGui.TextUnformatted($"Endpoint: http://{config.BindAddress}:{config.Port}/anamnesis/v1/");
+		ImGui.TextUnformatted($"Endpoint: http://{config.BindAddress}:{config.Port}/luminus/v1/");
 		ImGui.Separator();
 		ImGui.TextUnformatted($"Signed in: {state.SignedIn}");
 		ImGui.TextUnformatted($"GPose: {state.IsInGpose}");
@@ -93,6 +93,6 @@ public sealed class BridgeStatusWindow : Window, IDisposable
 
 		ImGui.TextDisabled(
 			"Idle on title screen. HTTP IPC starts automatically when signed into a territory. " +
-			"Linux Anamnesis connects without /anamnesisbridge.");
+			"Linux Luminus connects without /luminusbridge.");
 	}
 }

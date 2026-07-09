@@ -1,11 +1,11 @@
-// © Anamnesis.
+// © Luminus.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Pose;
+namespace LuminusBridge.Pose;
 
 using System;
 
-/// <summary>Matches desktop Anamnesis / Linux client pose import scopes.</summary>
+/// <summary>Matches desktop Luminus / Linux client pose import scopes.</summary>
 public enum PoseImportScope
 {
 	BodyOnly,

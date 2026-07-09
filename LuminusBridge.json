@@ -1,0 +1,14 @@
+{
+  "Author": "DeadlyDeathAngel",
+  "Name": "Luminus Bridge",
+  "Punchline": "HTTP status bridge for native Linux Luminus.",
+  "Description": "Exposes GPose, territory, and nearby actors over localhost HTTP for the native Linux Luminus client. Default port 6679.",
+  "IconUrl": "https://raw.githubusercontent.com/DeadlyDeathAngel/Luminus-Bridge/main/images/icon.png",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "luminus",
+    "gpose",
+    "linux",
+    "bridge"
+  ]
+}

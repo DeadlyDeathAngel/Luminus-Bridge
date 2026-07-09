@@ -1,11 +1,11 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.GameData;
+namespace LuminusBridge.GameData;
 
 using System;
 using System.Collections.Generic;
-using AnamnesisBridge.Api;
+using LuminusBridge.Api;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 

@@ -1,12 +1,13 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
-using AnamnesisBridge.Api;
-using AnamnesisBridge.GameData;
+using LuminusBridge.Api;
+using LuminusBridge.GameData;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Lumina.Excel;
 using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
@@ -25,9 +26,11 @@ public sealed class BridgeGameDataService
 	private bool dyesBuilt;
 	private bool colorsBuilt;
 	private bool weathersBuilt;
+	private bool emotesBuilt;
 
 	private readonly List<WeatherDto> weathers = [];
 	private readonly Dictionary<ushort, WeatherDto> weathersById = [];
+	private readonly List<EmoteCatalogDto> emotes = [];
 
 	private readonly Dictionary<string, List<CatalogItemDto>> itemsBySlot = new(StringComparer.OrdinalIgnoreCase);
 	/// <summary>Model key → all items sharing that model (many items collide; resolve by slot).</summary>
@@ -80,6 +83,18 @@ public sealed class BridgeGameDataService
 		};
 	}
 
+	public IReadOnlyList<WeatherDto> GetWeathers()
+	{
+		this.EnsureWeathers();
+		return this.weathers;
+	}
+
+	public IReadOnlyList<EmoteCatalogDto> GetEmotes()
+	{
+		this.EnsureEmotes();
+		return this.emotes;
+	}
+
 	public void ResolveGear(
 		EquipmentSlotDto slot,
 		out string itemName,
@@ -117,12 +132,6 @@ public sealed class BridgeGameDataService
 		iconId = item?.IconId ?? 0;
 		(dyeName, dyeHex) = this.LookupDye(weapon.Dye);
 		(dye2Name, dye2Hex) = this.LookupDye(weapon.Dye2);
-	}
-
-	public IReadOnlyList<WeatherDto> GetWeathers()
-	{
-		this.EnsureWeathers();
-		return this.weathers;
 	}
 
 	public bool TryGetWeather(ushort weatherId, out string name, out uint iconId)
@@ -751,5 +760,88 @@ public sealed class BridgeGameDataService
 
 			this.weathersBuilt = true;
 		}
+	}
+
+	private void EnsureEmotes()
+	{
+		lock (this.gate)
+		{
+			if (this.emotesBuilt)
+			{
+				return;
+			}
+
+			try
+			{
+				var emoteSheet = this.dataManager.GetExcelSheet<Emote>();
+				var timelineSheet = this.dataManager.GetExcelSheet<ActionTimeline>();
+				foreach (Emote emote in emoteSheet)
+				{
+					if (emote.RowId == 0)
+					{
+						continue;
+					}
+
+					string emoteName = emote.Name.ToString();
+					if (string.IsNullOrWhiteSpace(emoteName))
+					{
+						continue;
+					}
+
+					uint iconId = (uint)emote.Icon;
+					this.TryAddEmoteTimeline(timelineSheet, emoteName, iconId, emote.ActionTimeline[0], "Loop");
+					this.TryAddEmoteTimeline(timelineSheet, emoteName, iconId, emote.ActionTimeline[1], "Intro");
+					this.TryAddEmoteTimeline(timelineSheet, emoteName, iconId, emote.ActionTimeline[2], "Ground");
+					this.TryAddEmoteTimeline(timelineSheet, emoteName, iconId, emote.ActionTimeline[3], "Chair");
+					this.TryAddEmoteTimeline(timelineSheet, emoteName, iconId, emote.ActionTimeline[4], "Upper body");
+				}
+
+				this.emotes.Sort(static (a, b) =>
+				{
+					int byName = string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+					return byName != 0 ? byName : string.Compare(a.Variant, b.Variant, StringComparison.OrdinalIgnoreCase);
+				});
+			}
+			catch (Exception ex)
+			{
+				this.log.Warning(ex, "Failed to build emote catalog.");
+			}
+
+			this.emotesBuilt = true;
+		}
+	}
+
+	private void TryAddEmoteTimeline(
+		ExcelSheet<ActionTimeline> timelineSheet,
+		string emoteName,
+		uint iconId,
+		RowRef<ActionTimeline> timelineRef,
+		string variant)
+	{
+		if (!timelineRef.IsValid)
+		{
+			return;
+		}
+
+		ActionTimeline timeline = timelineRef.Value;
+		if (timeline.RowId == 0)
+		{
+			return;
+		}
+
+		string key = timeline.Key.ToString();
+		if (string.IsNullOrWhiteSpace(key))
+		{
+			return;
+		}
+
+		this.emotes.Add(new EmoteCatalogDto
+		{
+			Name = emoteName,
+			AnimationId = (ushort)timeline.RowId,
+			Variant = variant,
+			TimelineKey = key,
+			IconId = iconId,
+		});
 	}
 }

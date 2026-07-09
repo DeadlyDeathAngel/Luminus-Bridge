@@ -1,16 +1,16 @@
 // © DeadlyDeathAngel.
 // Licensed under the MIT license.
 
-namespace AnamnesisBridge.Services;
+namespace LuminusBridge.Services;
 
 using Dalamud;
 using Dalamud.Plugin.Services;
 using System;
 
 /// <summary>
-/// Eorzea time and weather read/write (matches desktop <see cref="Anamnesis.TimeService"/> /
-/// <see cref="Anamnesis.TerritoryService"/> memory layout).
-/// Time freeze uses a TimeAsm NOP patch (desktop <see cref="Anamnesis.TimeService"/>)
+/// Eorzea time and weather read/write (matches desktop <see cref="Luminus.TimeService"/> /
+/// <see cref="Luminus.TerritoryService"/> memory layout).
+/// Time freeze uses a TimeAsm NOP patch (desktop <see cref="Luminus.TimeService"/>)
 /// plus per-frame Eorzea time writes while frozen.
 /// </summary>
 public sealed unsafe class BridgeWorldService : IDisposable
@@ -443,12 +443,12 @@ public sealed unsafe class BridgeWorldService : IDisposable
 				this.addressesAvailable = this.frameworkStatic != 0 && this.gposeFiltersStatic != 0;
 				if (!this.addressesAvailable)
 				{
-					this.log.Warning("AnamnesisBridge world memory signatures not fully resolved.");
+					this.log.Warning("LuminusBridge world memory signatures not fully resolved.");
 				}
 			}
 			catch (Exception ex)
 			{
-				this.log.Warning(ex, "Failed to resolve AnamnesisBridge world memory signatures.");
+				this.log.Warning(ex, "Failed to resolve LuminusBridge world memory signatures.");
 				this.addressesAvailable = false;
 			}
 
@@ -469,19 +469,19 @@ public sealed unsafe class BridgeWorldService : IDisposable
 
 		if (!this.sigScanner.TryScanText(TimeAsmSignature, out nint address) || address == 0)
 		{
-			this.log.Warning("AnamnesisBridge could not resolve TimeAsm signature for time freeze.");
+			this.log.Warning("LuminusBridge could not resolve TimeAsm signature for time freeze.");
 			return;
 		}
 
 		if (!SafeMemory.ReadBytes(address, TimeAsmNopCount, out byte[]? original) || original == null)
 		{
-			this.log.Warning("AnamnesisBridge could not read TimeAsm bytes for time freeze.");
+			this.log.Warning("LuminusBridge could not read TimeAsm bytes for time freeze.");
 			return;
 		}
 
 		this.timeAsmAddress = address;
 		this.timeAsmOriginal = original;
-		this.log.Information("AnamnesisBridge TimeAsm patch ready for time freeze.");
+		this.log.Information("LuminusBridge TimeAsm patch ready for time freeze.");
 	}
 
 	private void SetTimeAsmFrozen(bool frozen)
